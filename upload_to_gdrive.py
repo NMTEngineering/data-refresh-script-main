@@ -63,7 +63,9 @@ def upload_file_to_drive():
         results = service.files().list(
             q=query,
             spaces='drive',
-            fields='files(id, name)'
+            fields='files(id, name)',
+            # FIX: Ensure search works across shared/team drives
+            supportsAllDrives=True 
         ).execute()
         
         items = results.get('files', [])
@@ -91,8 +93,10 @@ def upload_file_to_drive():
             print(f"🔄 File found on Drive (ID: {file_id}). Updating/Overwriting...")
             
             # CRITICAL FIX: Only pass media_body for update to prevent quota errors.
+            # FIX: Add support for all drives for robust updates
             service.files().update(fileId=file_id, 
-                                   media_body=media).execute()
+                                   media_body=media,
+                                   supportsAllDrives=True).execute()
                                    
             print(f"✅ Successfully updated file: {UPLOAD_FILE_NAME}")
         else:
@@ -100,9 +104,11 @@ def upload_file_to_drive():
             print("⬆️ File not found on Drive. Uploading new file...")
             
             # CRITICAL FIX: Use the simple metadata with parents
+            # FIX: Add support for all drives to resolve quota error on creation
             service.files().create(body=new_file_metadata,
                                    media_body=media,
-                                   fields='id').execute()
+                                   fields='id',
+                                   supportsAllDrives=True).execute()
                                    
             print(f"✅ Successfully uploaded new file: {UPLOAD_FILE_NAME}")
 
