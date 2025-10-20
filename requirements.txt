@@ -3,3 +3,4 @@ beautifulsoup4
 pandas
 openpyxl
 requests
+selenium beautifulsoup4 google-api-python-client oauth2client
