@@ -43,7 +43,8 @@ jobs:
           LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
           
           # The target filename to use in Google Drive (must match logic in upload_to_gdrive.py)
-          UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.event.release.tag_name || github.run_number }}.csv
+          # UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.event.release.tag_name || github.run_number }}.csv
+          UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.run_id }}.csv
           
         run: python upload_to_gdrive.py
           
