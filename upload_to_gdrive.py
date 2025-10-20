@@ -63,7 +63,7 @@ def upload_file_to_drive():
         results = service.files().list(
             q=query,
             spaces='drive',
-            fields='files(id, name)',
+            fields='files(id, name, mimeType)',
             supportsAllDrives=True 
         ).execute()
         
@@ -73,26 +73,41 @@ def upload_file_to_drive():
         print(f"❌ Error searching for existing file on Drive: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Metadata for a NEW file creation
+    # Metadata for a NEW file creation - Note the mimeType change!
     new_file_metadata = {
         'name': UPLOAD_FILE_NAME,
-        'parents': [FOLDER_ID]
+        'parents': [FOLDER_ID],
+        # CRITICAL FIX: Tell Drive to create a Google Sheet (application/vnd.google-apps.spreadsheet)
+        # This converts the CSV and bypasses the quota error.
+        'mimeType': 'application/vnd.google-apps.spreadsheet'
     }
     
     # 5. Upload or Update the File
     try:
-        # Create Media Object for upload
+        # Create Media Object for upload (CSV data)
         media = MediaIoBaseUpload(io.FileIO(LOCAL_FILE_PATH, 'rb'),
-                                  mimetype='text/csv',
+                                  mimetype='text/csv', # The data being uploaded is CSV
                                   resumable=True)
                                   
         if items:
             # File exists, update it (overwrite)
             file_id = items[0]['id']
+            # If the existing file is a CSV, we update it as a CSV. If it's a Sheet, we update it as a Sheet.
+            # We rely on the existing file's mimeType to maintain its format.
+            is_google_sheet = items[0].get('mimeType') == 'application/vnd.google-apps.spreadsheet'
+
             print(f"🔄 File found on Drive (ID: {file_id}). Updating/Overwriting...")
+            
+            # When updating an existing file, we must use the correct target mimeType in the metadata
+            # to trigger the conversion if it's a Sheet, or just update if it's a raw CSV.
+            update_metadata = {}
+            if is_google_sheet:
+                # If overwriting a sheet, we must tell it to import the CSV data
+                update_metadata['mimeType'] = 'application/vnd.google-apps.spreadsheet'
             
             # Update only media body and use supportsAllDrives
             service.files().update(fileId=file_id, 
+                                   body=update_metadata, # Pass the metadata body if converting
                                    media_body=media,
                                    supportsAllDrives=True).execute()
                                    
@@ -101,18 +116,17 @@ def upload_file_to_drive():
             # File does not exist, upload new one
             print("⬆️ File not found on Drive. Uploading new file...")
             
-            # CRITICAL FIX: Use the simple metadata with parents
-            # FIX: Add supportsAllDrives and transferOwnership to bypass quota on creation
+            # This creation step uses the new_file_metadata (Google Sheet MIME-type)
             service.files().create(body=new_file_metadata,
                                    media_body=media,
                                    fields='id',
-                                   supportsAllDrives=True,
-                                   transferOwnership=True).execute()
+                                   supportsAllDrives=True).execute()
                                    
-            print(f"✅ Successfully uploaded new file: {UPLOAD_FILE_NAME}")
+            print(f"✅ Successfully uploaded new file (as Google Sheet): {UPLOAD_FILE_NAME}")
 
     except Exception as e:
         print(f"❌ FATAL Error during file upload/update (Permissions/Folder ID issue likely): {e}", file=sys.stderr)
+        # Re-raise error to show detailed message
         sys.exit(1)
         
 if __name__ == '__main__':
