@@ -64,7 +64,6 @@ def upload_file_to_drive():
             q=query,
             spaces='drive',
             fields='files(id, name)',
-            # FIX: Ensure search works across shared/team drives
             supportsAllDrives=True 
         ).execute()
         
@@ -77,7 +76,7 @@ def upload_file_to_drive():
     # Metadata for a NEW file creation
     new_file_metadata = {
         'name': UPLOAD_FILE_NAME,
-        'parents': [FOLDER_ID] # CRITICAL: Sets the destination folder
+        'parents': [FOLDER_ID]
     }
     
     # 5. Upload or Update the File
@@ -92,8 +91,7 @@ def upload_file_to_drive():
             file_id = items[0]['id']
             print(f"🔄 File found on Drive (ID: {file_id}). Updating/Overwriting...")
             
-            # CRITICAL FIX: Only pass media_body for update to prevent quota errors.
-            # FIX: Add support for all drives for robust updates
+            # Update only media body and use supportsAllDrives
             service.files().update(fileId=file_id, 
                                    media_body=media,
                                    supportsAllDrives=True).execute()
@@ -104,11 +102,12 @@ def upload_file_to_drive():
             print("⬆️ File not found on Drive. Uploading new file...")
             
             # CRITICAL FIX: Use the simple metadata with parents
-            # FIX: Add support for all drives to resolve quota error on creation
+            # FIX: Add supportsAllDrives and transferOwnership to bypass quota on creation
             service.files().create(body=new_file_metadata,
                                    media_body=media,
                                    fields='id',
-                                   supportsAllDrives=True).execute()
+                                   supportsAllDrives=True,
+                                   transferOwnership=True).execute()
                                    
             print(f"✅ Successfully uploaded new file: {UPLOAD_FILE_NAME}")
 
