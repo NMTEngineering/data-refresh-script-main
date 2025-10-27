@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies (including Google Drive API client)
+      - name: Install dependencies (including Google Sheets API client)
         # Install scraping dependencies plus the new Google API packages
         run: pip install -r requirements.txt
 
@@ -27,8 +27,8 @@ jobs:
         run: python yellowpages_hammer_unions.py
 
       # ----------------------------------------------------------------------
-      # Solution: Upload to Google Drive using a standard Python script
-      # This avoids external GitHub Actions which may be blocked/unreachable.
+      # Solution: Upload to Google Sheets using Python Sheets API
+      # This bypasses the persistent Drive storage quota error.
       # ----------------------------------------------------------------------
       - name: Upload CSV to Google Drive via Python Script
         # Pass necessary configurations as environment variables to the Python script
@@ -36,14 +36,13 @@ jobs:
           # Pass the JSON secret directly to the script
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS }}
           
-          # Pass the Folder ID
-          GDRIVE_FOLDER_ID: 13D4zIg4-kHcAVDL_XS_Ry1uABYkrLYmJ
+          # Pass the target Google SHEET ID (MANDATORY)
+          GDRIVE_SHEET_ID: 1Vm5llrq3QiibTmz-D4ekDIJ6sRJognJVSGIGxy-ib60
           
           # Path to the local file created by the scraping script
           LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
           
-          # The target filename to use in Google Drive (must match logic in upload_to_gdrive.py)
-          # UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.event.release.tag_name || github.run_number }}.csv
+          # The target filename is not used for data upload, but remains for environment consistency.
           UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.run_id }}.csv
           
         run: python upload_to_gdrive.py
