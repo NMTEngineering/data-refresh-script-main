@@ -4,7 +4,7 @@ import io
 import httplib2
 import sys
 from googleapiclient.discovery import build
-from googleapialient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Configuration from Environment Variables ---
