@@ -1,3 +1,73 @@
+# name: Scrape and Upload to Cloud
+
+# on:
+#   schedule:
+#     # Runs every Sunday at 09:58 UTC (adjust to your desired time)
+#     - cron: '58 9 * * 0'
+#   workflow_dispatch:  # Allow manual trigger
+
+# jobs:
+#   scrape_and_upload:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Setup Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.10'
+
+
+# # below is for updating hammer's script (adding chrome driver)
+#       - name: Setup Chrome
+#         uses: browser-actions/setup-chrome@v1
+#         with:
+#           chrome-version: stable
+
+          
+
+#       - name: Install dependencies (including Google Sheets API client)
+#         # Install scraping dependencies plus the new Google API packages
+#         run: pip install -r requirements.txt
+
+#       - name: Run Hammer Unions Scraping Script
+#         run: python yellowpages_hammer_unions.py
+
+#       # ----------------------------------------------------------------------
+#       # Solution: Upload to Google Sheets using Python Sheets API
+#       # This bypasses the persistent Drive storage quota error.
+#       # ----------------------------------------------------------------------
+#       - name: Upload CSV to Google Drive via Python Script
+#         # Pass necessary configurations as environment variables to the Python script
+#         env:
+#           # Pass the JSON secret directly to the script
+#           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
+          
+#           # Pass the target Google SHEET ID (MANDATORY)
+#           # GDRIVE_SHEET_ID: 1Vm5llrq3QiibTmz-D4ekDIJ6sRJognJVSGIGxy-ib60
+
+#           GDRIVE_SHEET_ID: 19c0qMGKzF3s1oCq9-Wo3RAqi_uH93BCaSoxY6cGlUXQ
+          
+#           # Path to the local file created by the scraping script
+#           LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
+          
+#           # The target filename is not used for data upload, but remains for environment consistency.
+#           UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.run_id }}.csv
+          
+#         run: python upload_to_gdrive.py
+          
+#       # ----------------------------------------------------------------------
+#       # Optional: Keep GitHub Artifact for troubleshooting (as you had before)
+#       # ----------------------------------------------------------------------
+#       - name: Upload Artifact to GitHub
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: scrape-output-csv
+#           path: "*.csv"
+
+
 name: Scrape and Upload to Cloud
 
 on:
@@ -11,6 +81,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ======================================================================
+      # 0. COMMON SETUP STEPS
+      # ======================================================================
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -19,50 +92,52 @@ jobs:
         with:
           python-version: '3.10'
 
-
-# below is for updating hammer's script (adding chrome driver)
       - name: Setup Chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
-
           
-
-      - name: Install dependencies (including Google Sheets API client)
-        # Install scraping dependencies plus the new Google API packages
+      - name: Install dependencies
+        # This step is essential and shared for both scraping scripts and the uploader
         run: pip install -r requirements.txt
 
-      - name: Run Scraping Script
+      # ======================================================================
+      # 1. HAMMER UNIONS SCRAPE & UPLOAD (Existing Logic)
+      # ======================================================================
+      - name: 🔨 Run Yellowpage Hammer Unions Scraping Script
         run: python yellowpages_hammer_unions.py
 
-      # ----------------------------------------------------------------------
-      # Solution: Upload to Google Sheets using Python Sheets API
-      # This bypasses the persistent Drive storage quota error.
-      # ----------------------------------------------------------------------
-      - name: Upload CSV to Google Drive via Python Script
-        # Pass necessary configurations as environment variables to the Python script
+      - name: ⬆️ Upload Hammer Unions CSV to Google Sheets
+        # Pass environment variables specific to the Hammer Unions sheet
         env:
-          # Pass the JSON secret directly to the script
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
-          
-          # Pass the target Google SHEET ID (MANDATORY)
-          # GDRIVE_SHEET_ID: 1Vm5llrq3QiibTmz-D4ekDIJ6sRJognJVSGIGxy-ib60
-
-          GDRIVE_SHEET_ID: 19c0qMGKzF3s1oCq9-Wo3RAqi_uH93BCaSoxY6cGlUXQ
-          
-          # Path to the local file created by the scraping script
+          GDRIVE_SHEET_ID: 19c0qMGKzF3s1oCq9-Wo3RAqi_uH93BCaSoxY6cGlUXQ # Target Sheet 1
           LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
-          
-          # The target filename is not used for data upload, but remains for environment consistency.
-          UPLOAD_FILE_NAME: hammer_unions_scrape_${{ github.run_id }}.csv
-          
+          UPLOAD_FILE_NAME: yellowpages_hammer_unions.csv
         run: python upload_to_gdrive.py
-          
-      # ----------------------------------------------------------------------
-      # Optional: Keep GitHub Artifact for troubleshooting (as you had before)
-      # ----------------------------------------------------------------------
-      - name: Upload Artifact to GitHub
+        
+      # ======================================================================
+      # 2. BOLTS SCRAPE & UPLOAD (New Logic for the second file)
+      # ======================================================================
+      # NOTE: You must have a Python file named 'yellowpages_bolts.py' for this step
+      - name: 🔩 Run Yellowpage Bolts Scraping Script
+        run: python yellowpages_bolts.py
+
+      - name: ⬆️ Upload Bolts CSV to Google Sheets
+        # Pass environment variables specific to the Bolts sheet
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
+          # *** IMPORTANT: REPLACE THIS PLACEHOLDER WITH YOUR SECOND SHEET ID ***
+          GDRIVE_SHEET_ID: 1DTTYXlaePfomR6KV5XvbHlwWr0EUSW3CsC4it38GwSw 
+          LOCAL_FILE_PATH: yellowpages_bolts.csv
+          UPLOAD_FILE_NAME: yellowpages_bolts.csv
+        run: python upload_to_gdrive.py
+
+      # ======================================================================
+      # Optional: Upload Artifacts (Will now include both CSVs)
+      # ======================================================================
+      - name: Upload Artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-output-csv
-          path: "*.csv"
+          name: scrape-output-csvs
+          path: "*.csv" # This captures both yellowpages_hammer_unions.csv and yellowpages_bolts.csv
