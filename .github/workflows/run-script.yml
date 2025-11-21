@@ -46,7 +46,9 @@ jobs:
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
           
           # Pass the target Google SHEET ID (MANDATORY)
-          GDRIVE_SHEET_ID: 1Vm5llrq3QiibTmz-D4ekDIJ6sRJognJVSGIGxy-ib60
+          # GDRIVE_SHEET_ID: 1Vm5llrq3QiibTmz-D4ekDIJ6sRJognJVSGIGxy-ib60
+
+          GDRIVE_SHEET_ID: 19c0qMGKzF3s1oCq9-Wo3RAqi_uH93BCaSoxY6cGlUXQ
           
           # Path to the local file created by the scraping script
           LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
