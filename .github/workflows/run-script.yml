@@ -19,6 +19,15 @@ jobs:
         with:
           python-version: '3.10'
 
+
+# below is for updating hammer's script (adding chrome driver)
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+          
+
       - name: Install dependencies (including Google Sheets API client)
         # Install scraping dependencies plus the new Google API packages
         run: pip install -r requirements.txt
