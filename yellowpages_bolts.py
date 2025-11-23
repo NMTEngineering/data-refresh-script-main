@@ -164,21 +164,25 @@ import csv
 import os
 
 # ================================
-# 🔐 ScraperAPI Configuration
+# 🔐 Proxy / ScraperAPI Configuration
 # ================================
-SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY", "4e0f35d8236f741f56d86ac31c941f95")
-proxy = f"http://scraperapi:{SCRAPERAPI_KEY}@proxy-server.scraperapi.com:8001"
+proxy = os.getenv("PROXY_STRING", None)
 
 # ================================
-# 🧭 Setup Chrome with ScraperAPI Proxy
+# 🧭 Setup Chrome with Proxy
 # ================================
 options = Options()
-options.add_argument("--headless")  # Comment this if you want to see browser
+options.add_argument("--headless")  # Comment out if debugging locally
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
-options.add_argument(f"--proxy-server={proxy}")
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--window-size=1920,1080")
+
+if proxy:
+    print(f"🛡 Using proxy: {proxy}")
+    options.add_argument(f"--proxy-server={proxy}")
+else:
+    print("⚠️ No proxy configured. Running direct connection.")
 
 driver = webdriver.Chrome(options=options)
 
@@ -192,7 +196,7 @@ role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist"
 # ================================
 # 🔁 Scraping Logic
 # ================================
-for page in range(1, 5):  # Update range for more pages
+for page in range(1, 5):  # Scrape first 4 pages
     print(f"🔁 Scraping page {page}...")
     driver.get(base_url.format(page))
 
@@ -203,7 +207,7 @@ for page in range(1, 5):  # Update range for more pages
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
 
         for i in range(len(company_cards)):
-            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')  # Re-fetch
+            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')  # Refresh elements
             try:
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
