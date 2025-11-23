@@ -178,7 +178,7 @@ def get_proxy_url(target_url):
 
 # Setup Chrome driver (Updated for remote/headless environments)
 options = Options()
-options.add_argument("--headless=new")  # Use new headless mode
+options.add_argument("--headless=new") # Use new headless mode
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage") # Added for better remote stability
 options.add_argument("--window-size=1920,1080")
@@ -204,7 +204,7 @@ data = []
 
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 5):  # Update range for more pages
+for page in range(1, 5): # Update range for more pages
     print(f"🔁 Scraping page {page}...")
     
     # MODIFICATION 2: Proxy the listing page URL
@@ -268,6 +268,7 @@ for page in range(1, 5):  # Update range for more pages
                     if info_container:
                         for p in info_container.find_all("p"):
                             spans = p.find_all("span")
+                            # Removed non-printable space after "City :"
                             if len(spans) == 2 and "City :" in spans[0].text:
                                 city = spans[1].text.strip()
                                 location = city + ", UAE"
