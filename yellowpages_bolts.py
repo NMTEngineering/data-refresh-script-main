@@ -208,41 +208,31 @@ from bs4 import BeautifulSoup
 import time
 import csv
 import sys
+import os
 
-# --- 1. SETUP CHROME OPTIONS FOR GITHUB ACTIONS ---
+# --- SETUP CHROME ---
 options = Options()
-options.add_argument("--headless=new")  # Modern headless mode (less detectable)
+options.add_argument("--headless=new") 
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-gpu")
-options.add_argument("--window-size=1920,1080") # Force Desktop Size
-options.add_argument("--start-maximized")
-
-# Spoof User-Agent (Look like a real Windows PC)
-user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-options.add_argument(f'user-agent={user_agent}')
-
-# Disable Automation Flags (Hides "Chrome is being controlled by software")
+options.add_argument("--window-size=1920,1080")
 options.add_argument('--disable-blink-features=AutomationControlled')
-options.add_experimental_option("excludeSwitches", ["enable-automation"])
-options.add_experimental_option('useAutomationExtension', False)
+
+# --- 1. PROXY CONFIGURATION (CRITICAL) ---
+proxy_server = os.environ.get("PROXY_STRING") 
+if proxy_server:
+    print(f"🌍 Using Proxy: {proxy_server}")
+    options.add_argument(f'--proxy-server={proxy_server}')
+else:
+    print("⚠️ WARNING: No Proxy found. Request might be blocked.")
 
 print("Initializing Chrome Driver...")
 try:
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
-    
-    # Advanced Stealth: Remove navigator.webdriver flag
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            })
-        """
-    })
-    print("✅ Driver Initialized.")
+    print("✅ Driver initialized.")
 except Exception as e:
-    print(f"❌ Failed to initialize driver: {e}")
+    print(f"❌ Driver Init Failed: {e}")
     sys.exit(1)
 
 # --- 2. SCRAPING LOGIC ---
@@ -250,50 +240,42 @@ base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 2):  # Test with just 1 page first
+for page in range(1, 5): 
     print(f"\n🔁 Scraping page {page}...")
-    driver.get(base_url.format(page))
-    
-    # Give it a moment to settle
-    time.sleep(5)
-
     try:
-        # Check if we are on the right page by printing the title
-        print(f"   ℹ️ Page Title: {driver.title}")
+        driver.get(base_url.format(page))
+        time.sleep(2) # Polite delay
 
-        # Wait for elements
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
-        )
-        company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
-        
-        print(f"   ✅ Found {len(company_cards)} cards.")
-
-        if not company_cards:
-            print("⚠️ Cards list empty.")
+        if "Access Denied" in driver.title:
+            print("❌ Blocked by Website.")
             continue
 
+        WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box')))
+        company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+        
+        if not company_cards:
+            print("⚠️ No cards found.")
+            continue
+            
+        print(f"   ✅ Found {len(company_cards)} companies.")
+
         for i in range(len(company_cards)):
-            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
             try:
+                # Refresh elements
+                company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
                 
-                # Scroll to element to ensure it's interactable
                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
-                time.sleep(0.5) 
-                
                 link = link_elem.get_attribute("href")
                 company_name = link_elem.text.strip()
                 
-                print(f"   --> Processing: {company_name}")
-
                 driver.execute_script("window.open(arguments[0]);", link)
                 driver.switch_to.window(driver.window_handles[-1])
-                
                 WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                
                 soup = BeautifulSoup(driver.page_source, "html.parser")
 
-                # (Extraction logic kept same as your request)
+                # Extraction
                 mobile = ''
                 try:
                     m = soup.find("a", id=lambda x: x and "lblMobile" in x)
@@ -343,25 +325,14 @@ for page in range(1, 2):  # Test with just 1 page first
 
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
-                time.sleep(1)
-
-            except Exception as e:
-                print(f"   ❌ Error on card {i}: {e}")
+            except Exception:
                 if len(driver.window_handles) > 1:
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
                 continue
 
     except Exception as e:
-        print(f"⚠️ FATAL ERROR on Page {page}: {e}")
-        
-        # --- CRITICAL DEBUGGING STEP ---
-        # If it fails, take a screenshot so you can see WHY
-        print("📸 Taking screenshot of error page...")
-        driver.save_screenshot("error_page_view.png")
-        # Print a snippet of the HTML to see if we are blocked
-        print(driver.page_source[:1000]) 
-        continue
+        print(f"⚠️ Page error: {e}")
 
 # Save CSV
 if data:
@@ -369,7 +340,7 @@ if data:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print("✅ CSV Saved Successfully.")
+    print("✅ CSV Saved: yellowpages_bolts.csv")
 else:
     print("❌ No data collected.")
 
