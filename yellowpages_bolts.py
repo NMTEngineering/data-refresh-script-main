@@ -159,27 +159,25 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.common.exceptions import TimeoutException, NoSuchElementException 
 from bs4 import BeautifulSoup
 import time
 import csv
-import sys
 import urllib.parse
-import os 
+import sys
 
-# --- CONFIGURATION ---
-SCRAPER_API_KEY = "4e0f35d8236f741f56d86ac31c941f95"
+# --- CONFIGURATION (MANDATORY) ---
+# REPLACE THIS WITH YOUR ACTUAL SCRAPERAPI KEY
+SCRAPER_API_KEY = "4e0f35d8236f741f56d86ac31c941f95" 
 
 def get_proxy_url(target_url):
-    """Wraps the target URL in the ScraperAPI Gateway format"""
+    """Wraps the target URL in the ScraperAPI Gateway format for remote execution."""
     encoded_url = urllib.parse.quote(target_url)
     # render=true ensures Javascript loads
     return f"http://api.scraperapi.com/?api_key={SCRAPER_API_KEY}&url={encoded_url}&render=true"
 
-# --- SETUP CHROME ---
+# --- SETUP CHROME DRIVER ---
 options = Options()
-# Using 'new' headless mode for better compatibility
-options.add_argument("--headless=new") 
+options.add_argument("--headless=new") # Use the new, more reliable headless mode
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--window-size=1920,1080")
@@ -187,7 +185,7 @@ options.add_argument('--disable-blink-features=AutomationControlled')
 
 print("🚀 Initializing Chrome Driver...")
 try:
-    # Use ChromeDriverManager to automatically handle the correct driver version
+    # Use ChromeDriverManager for dynamic driver management (needed for remote environments)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(90)
@@ -196,98 +194,81 @@ except Exception as e:
     print(f"❌ Driver Init Failed: {e}")
     sys.exit(1)
 
-# --- SCRAPING LOGIC ---
-base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
+
+# --- START SCRAPING ---
+base_listing_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
+
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-# Run 4 pages
 for page in range(1, 5): 
     print(f"\n🔁 Scraping page {page}...")
     
-    target_url = base_url.format(page)
-    proxy_url = get_proxy_url(target_url)
-    
+    # Use ScraperAPI proxy for the listing page load
+    listing_url = base_listing_url.format(page)
+    driver.get(get_proxy_url(listing_url))
+
     try:
-        driver.get(proxy_url)
-        
-        # Wait for card list to load
         WebDriverWait(driver, 60).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
         )
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
-        
-        if not company_cards:
-            print("⚠️ No cards found.")
-            continue
-
-        print(f"   ✅ Found {len(company_cards)} companies. Starting extraction...")
+        print(f"   ✅ Found {len(company_cards)} companies on page {page}.")
 
         for i in range(len(company_cards)):
+            # Re-fetch elements to avoid stale reference
+            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
             
-            # Initialize detail variables before the inner try/except block
-            company_name = 'Unknown'
-            real_link = ''
-            
+            # Initialize with default values
+            link = ''; company_name = 'Unknown'
+
             try:
                 print(f"      ---> Processing Card {i+1}...")
                 
-                # Refresh elements
-                company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
-                
-                real_link = link_elem.get_attribute("href")
-                # Clean up the company name
-                company_name = link_elem.text.strip().replace('\n', ' ').split('More Info')[0].strip()
-                
-                # OPEN DETAIL PAGE VIA GATEWAY
-                detail_proxy_url = get_proxy_url(real_link)
-                
-                print(f"      ---> Opening Detail for: {company_name}")
-                
-                # Open in new tab
+                driver.execute_script("arguments[0].scrollIntoView();", link_elem)
+                link = link_elem.get_attribute("href")
+                company_name = link_elem.text.strip().split('\n')[0].strip()
+
+                # Open detail page using ScraperAPI proxy
+                detail_proxy_url = get_proxy_url(link)
                 driver.execute_script("window.open(arguments[0]);", detail_proxy_url)
                 driver.switch_to.window(driver.window_handles[-1])
                 
-                # Wait for detail page load
-                WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                
-                print(f"      ---> Detail Page Loaded. Starting data retrieval.")
-                
-                # Use BeautifulSoup for faster, less-error-prone static data extraction
+                print(f"      ---> Opening Detail for: {company_name}")
+                WebDriverWait(driver, 60).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+
                 soup = BeautifulSoup(driver.page_source, "html.parser")
-                
-                # --- Extraction Variables ---
-                mobile = ''; phone = ''; website = ''; location = ''; product_type = ''; role = "Not Described"
 
-                # 1. Mobile Number Extraction (BS4 by ID)
-                try:
-                    m = soup.find("a", id=lambda x: x and "lblMobile" in x)
-                    mobile = m.text.strip() if m else ''
-                except Exception as e:
-                    print(f"      🚨 Mobile Error: {type(e).__name__} - {e}")
-                    
-                # 2. Phone Number Extraction (BS4 by ID)
-                try:
-                    p = soup.find("a", id=lambda x: x and "lblPhone" in x)
-                    phone = p.text.strip() if p else ''
-                except Exception as e:
-                    print(f"      🚨 Phone Error: {type(e).__name__} - {e}")
+                # Data extraction variables
+                mobile = ''; phone = ''; website = ''; location = ''; product_type = ''
 
-                # 3. Website URL Extraction (BS4 by button attribute)
+                # mobile number (BS4 - reliable)
                 try:
-                    w = soup.find("button", attrs={"data-url": True})
-                    if w and "website" in w.text.lower():
-                        website = w['data-url']
-                    
-                    if not website:
-                        w_title = soup.find("button", title=lambda x: x and ("http" in x or "https" in x))
-                        website = w_title['title'] if w_title else ''
-                        
-                except Exception as e:
-                    print(f"      🚨 Website Error: {type(e).__name__} - {e}")
+                    mobile = soup.find("a", id=lambda x: x and "lblMobile" in x)
+                    mobile = mobile.text.strip() if mobile else ''
+                except:
+                    mobile = ''
 
-                # 4. Location Extraction (BS4 by grid class)
+                # phone number (BS4 - reliable)
+                try:
+                    phone = soup.find("a", id=lambda x: x and "lblPhone" in x)
+                    phone = phone.text.strip() if phone else ''
+                except:
+                    phone = ''
+
+                # Website URL (BS4 - reliable)
+                try:
+                    website_btn = soup.find("button", text="Website")
+                    website = website_btn['data-url'] if website_btn and 'data-url' in website_btn.attrs else ''
+                    if "undefined" in website:
+                        website = website_btn.get("title", "") if website_btn else ''
+                except:
+                    website = ''
+
+                # Location (BS4 - reliable)
                 try:
                     info_container = soup.find("div", class_="grid grid-cols-2")
                     if info_container:
@@ -298,71 +279,86 @@ for page in range(1, 5):
                                 location = city + ", UAE"
                                 break
                 except Exception as e:
-                    print(f"      🚨 Location Error: {type(e).__name__} - {e}")
+                    print(f"      ⚠️ Location extraction failed: {e}")
+                    location = ""
 
-                # 5. Product Type Extraction (USING XPATH TO AVOID FRAGILE CSS CLASS)
+                # ----------------------------------------------------------------------
+                # CRITICAL BUG FIX: Replaced the brittle CSS selector with a resilient XPath
+                # ----------------------------------------------------------------------
                 try:
-                    # Find the main container element on the right side. We look for a <div> 
-                    # that contains the text "Product Types"
+                    # Find the entire right-side container using a descriptive XPath
+                    # This searches for a div that contains the text "Product Types"
                     product_container = driver.find_element(By.XPATH, "//div[contains(., 'Product Types')]")
-                    
-                    # Extract all <a> tags within that container that have the specific blue link color
-                    pls = product_container.find_elements(By.XPATH, ".//a[contains(@class, 'text-[#1e2f71]')]")
-                    
-                    # Filter out links that are not product related (like 'brands')
-                    p_list = [pl.text.strip() for pl in pls if 'brands' not in pl.get_attribute('href').lower() and pl.text.strip()]
-                    product_type = ", ".join(p_list)
+
+                    # Extract all <a> tags inside it that have the text color class
+                    product_links = product_container.find_elements(By.XPATH, ".//a[contains(@class, 'text-[#1e2f71]')]")
+
+                    # Filter out brands by looking for those BEFORE the span with "Brands :"
+                    product_type_list = []
+                    for plink in product_links:
+                        # Check the actual text of the link
+                        if 'brands' in plink.get_attribute('href').lower():
+                            break  # stop when we hit the brands section
+                        product_type_list.append(plink.text.strip())
+
+                    product_type = ", ".join([pt for pt in product_type_list if pt])
                     
                     if not product_type:
-                         print("      ⚠️ Found product section container, but extracted list was empty.")
+                        print("      ⚠️ Found product section container, but extracted list was empty.")
                 except Exception as e:
-                    # This should now catch failures on the XPath/Selenium attempt
-                    print(f"      🚨 Product Type Error (XPATH/Selenium Fallback): {type(e).__name__} - {e}")
-                    pass 
-
-                # 6. Role Extraction (BS4 - text-based)
-                full_text = soup.get_text(" ", strip=True).lower()
-                for k in role_keywords:
-                    if k in full_text: 
-                        role = k.capitalize()
-                        break
+                    print(f"      ❌ Product type not found (using resilient XPath): {e}")
+                    product_type = ""
+                # ----------------------------------------------------------------------
                 
+                # Contact URL (from current page)
+                contact_url = driver.current_url
+
+                # Detect role
+                role = "Not Described"
+                combined_text = soup.get_text(" ", strip=True).lower()
+                for keyword in role_keywords:
+                    if keyword in combined_text:
+                        role = keyword.capitalize()
+                        break
+
                 # Append data
                 data.append({
-                    'Company Name': company_name, 'Website URL': website, 'Product Types': product_type,
-                    'Mobile Number': mobile, 'Phone Number': phone, 'Location': location,
-                    'Role': role, 'Contact Supplier URL': real_link
+                    'Company Name': company_name,
+                    'Website URL': website,
+                    'Product Types': product_type,
+                    'Mobile Number': mobile,
+                    'Phone Number': phone,
+                    'Location': location,
+                    'Role': role,
+                    'Contact Supplier URL': contact_url
                 })
                 
                 print(f"      ---> SUCCESS: Data for {company_name} appended. Products: '{product_type}'")
 
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
-                
+                time.sleep(1)
+
             except Exception as e:
-                # Fatal error for current card (e.g., failed to get link)
-                print(f"\n   ❌ FATAL CARD ERROR on Card {i+1} ({company_name}): {type(e).__name__} - {e}\n")
-                
-                # Clean up if tab is open
+                print(f"      ❌ Error scraping company {company_name}: {type(e).__name__} - {e}")
                 if len(driver.window_handles) > 1:
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
-                continue # move to next card
+                continue
 
-    except TimeoutException:
-        print("\n❌ TIMEOUT: Could not find listing cards within 60 seconds. Moving to next page.")
     except Exception as e:
-        print(f"⚠️ Page Load Error: {e}")
+        print(f"⚠️ Page {page} failed to load or find cards: {e}")
+        continue
 
-# --- FINAL SAVE & CLEANUP ---
+# Save to CSV
 if data:
     output_path = "yellowpages_bolts.csv"
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print(f"\n✅ CSV Saved: {output_path}. Total records: {len(data)}")
+    print(f"\n✅ Done! Data saved to {output_path}. Total records: {len(data)}")
 else:
-    print("\n❌ No data collected. Please examine the debug output for '🚨' errors.")
+    print("\n⚠️ No data scraped. Please check logs for errors.")
 
 driver.quit()
