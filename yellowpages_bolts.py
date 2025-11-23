@@ -187,6 +187,7 @@ options.add_argument('--disable-blink-features=AutomationControlled')
 
 print("🚀 Initializing Chrome Driver...")
 try:
+    # Use ChromeDriverManager to automatically handle the correct driver version
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(90)
@@ -200,7 +201,7 @@ base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-# Run 4 pages now that we are confident the core loop works
+# Run 4 pages
 for page in range(1, 5): 
     print(f"\n🔁 Scraping page {page}...")
     
@@ -253,9 +254,10 @@ for page in range(1, 5):
                 
                 print(f"      ---> Detail Page Loaded. Starting data retrieval.")
                 
+                # Use BeautifulSoup for faster, less-error-prone static data extraction
                 soup = BeautifulSoup(driver.page_source, "html.parser")
                 
-                # --- Extraction ---
+                # --- Extraction Variables ---
                 mobile = ''; phone = ''; website = ''; location = ''; product_type = ''; role = "Not Described"
 
                 # 1. Mobile Number Extraction (BS4 by ID)
@@ -274,13 +276,11 @@ for page in range(1, 5):
 
                 # 3. Website URL Extraction (BS4 by button attribute)
                 try:
-                    # Look for button that contains 'Website' text or has data-url
                     w = soup.find("button", attrs={"data-url": True})
                     if w and "website" in w.text.lower():
                         website = w['data-url']
                     
                     if not website:
-                        # Fallback for buttons with just the 'title'
                         w_title = soup.find("button", title=lambda x: x and ("http" in x or "https" in x))
                         website = w_title['title'] if w_title else ''
                         
@@ -293,7 +293,6 @@ for page in range(1, 5):
                     if info_container:
                         for p in info_container.find_all("p"):
                             spans = p.find_all("span")
-                            # Check if the text matches the label format (e.g., "City :")
                             if len(spans) == 2 and "City :" in spans[0].text:
                                 city = spans[1].text.strip()
                                 location = city + ", UAE"
@@ -301,25 +300,25 @@ for page in range(1, 5):
                 except Exception as e:
                     print(f"      🚨 Location Error: {type(e).__name__} - {e}")
 
-                # 5. Product Type Extraction (NEW XPATH/Selenium Approach)
-                # This approach looks for the stable structure containing the links
+                # 5. Product Type Extraction (USING XPATH TO AVOID FRAGILE CSS CLASS)
                 try:
-                    # Look for any element that contains anchor tags with the specific blue link color.
-                    # This is much more flexible than relying on 'flex justify-between'
-                    product_container = driver.find_element(By.XPATH, "//div[.//a[contains(@class, 'text-[#1e2f71]')]]")
+                    # Find the main container element on the right side. We look for a <div> 
+                    # that contains the text "Product Types"
+                    product_container = driver.find_element(By.XPATH, "//div[contains(., 'Product Types')]")
                     
-                    # Extract all links within that container
-                    pls = product_container.find_elements(By.TAG_NAME, 'a')
+                    # Extract all <a> tags within that container that have the specific blue link color
+                    pls = product_container.find_elements(By.XPATH, ".//a[contains(@class, 'text-[#1e2f71]')]")
                     
                     # Filter out links that are not product related (like 'brands')
                     p_list = [pl.text.strip() for pl in pls if 'brands' not in pl.get_attribute('href').lower() and pl.text.strip()]
                     product_type = ", ".join(p_list)
                     
                     if not product_type:
-                         print("      ⚠️ Found container, but extracted product list was empty/only brands.")
+                         print("      ⚠️ Found product section container, but extracted list was empty.")
                 except Exception as e:
-                    print(f"      🚨 Product Type Error (XPATH/Selenium): {type(e).__name__} - {e}")
-                    pass # Keep product_type as ''
+                    # This should now catch failures on the XPath/Selenium attempt
+                    print(f"      🚨 Product Type Error (XPATH/Selenium Fallback): {type(e).__name__} - {e}")
+                    pass 
 
                 # 6. Role Extraction (BS4 - text-based)
                 full_text = soup.get_text(" ", strip=True).lower()
