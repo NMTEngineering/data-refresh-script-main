@@ -152,6 +152,14 @@
 
 
 
+"""
+YellowPages UAE Scraper - Bolts Category (with ScraperAPI HTML rendering)
+------------------------------------------------------------------------
+✅ Works with ScraperAPI render=true to bypass dynamic loading issues.
+✅ Uses API key from GitHub secret (PROXY_STRING).
+✅ Exports yellowpages_bolts.csv
+"""
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -162,43 +170,57 @@ from bs4 import BeautifulSoup
 import time
 import csv
 import os
+import urllib.parse
 
-# ================================
-# 🔐 Proxy / ScraperAPI Configuration
-# ================================
-proxy = os.getenv("PROXY_STRING", None)
+# ==========================================================
+# 🔐 ScraperAPI Setup (use from PROXY_STRING or extract key)
+# ==========================================================
+proxy_env = os.getenv("PROXY_STRING", "")
+# Extract API key if full proxy string was provided
+# e.g., http://scraperapi:KEY@proxy-server.scraperapi.com:8001
+SCRAPERAPI_KEY = None
+if "@" in proxy_env and ":" in proxy_env:
+    try:
+        SCRAPERAPI_KEY = proxy_env.split(":")[2].split("@")[0]
+    except Exception:
+        SCRAPERAPI_KEY = None
 
-# ================================
-# 🧭 Setup Chrome with Proxy
-# ================================
+# Fallback: direct secret as raw key
+if not SCRAPERAPI_KEY or len(SCRAPERAPI_KEY) < 10:
+    SCRAPERAPI_KEY = proxy_env.strip()
+
+print(f"🔑 Using ScraperAPI Key: {SCRAPERAPI_KEY[:6]}****")
+
+# ==========================================================
+# 🧭 Setup Chrome (no need for proxy here)
+# ==========================================================
 options = Options()
-options.add_argument("--headless")  # Comment out if debugging locally
+options.add_argument("--headless")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--window-size=1920,1080")
 
-if proxy:
-    print(f"🛡 Using proxy: {proxy}")
-    options.add_argument(f"--proxy-server={proxy}")
-else:
-    print("⚠️ No proxy configured. Running direct connection.")
-
 driver = webdriver.Chrome(options=options)
 
-# ================================
-# 🌐 Base URL
-# ================================
+# ==========================================================
+# 🌐 Helper function to load page via ScraperAPI
+# ==========================================================
+def get_scraperapi_url(target_url):
+    encoded_url = urllib.parse.quote_plus(target_url)
+    return f"https://api.scraperapi.com/?api_key={SCRAPERAPI_KEY}&url={encoded_url}&render=true"
+
+# ==========================================================
+# 🧩 Main scraping logic
+# ==========================================================
 base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-# ================================
-# 🔁 Scraping Logic
-# ================================
-for page in range(1, 5):  # Scrape first 4 pages
+for page in range(1, 5):
     print(f"🔁 Scraping page {page}...")
-    driver.get(base_url.format(page))
+    target_url = get_scraperapi_url(base_url.format(page))
+    driver.get(target_url)
 
     try:
         WebDriverWait(driver, 15).until(
@@ -206,39 +228,38 @@ for page in range(1, 5):  # Scrape first 4 pages
         )
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
 
+        if not company_cards:
+            print(f"⚠️ No company cards detected on page {page}")
+            continue
+
         for i in range(len(company_cards)):
-            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')  # Refresh elements
+            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')  # Refresh each iteration
             try:
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
                 link = link_elem.get_attribute("href")
                 company_name = link_elem.text.strip()
 
-                # Open detail page in new tab
-                driver.execute_script("window.open(arguments[0]);", link)
+                # Open detail page through ScraperAPI (rendered)
+                detail_url = get_scraperapi_url(link)
+                driver.execute_script("window.open(arguments[0]);", detail_url)
                 driver.switch_to.window(driver.window_handles[-1])
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
                 soup = BeautifulSoup(driver.page_source, "html.parser")
 
                 # ====== Extract Fields ======
-                # Mobile number
-                mobile = ''
-                try:
-                    mobile = soup.find("a", id=lambda x: x and "lblMobile" in x)
-                    mobile = mobile.text.strip() if mobile else ''
-                except:
-                    pass
+                def safe_find_text(id_keyword):
+                    try:
+                        tag = soup.find("a", id=lambda x: x and id_keyword in x)
+                        return tag.text.strip() if tag else ''
+                    except:
+                        return ''
 
-                # Phone number
-                phone = ''
-                try:
-                    phone = soup.find("a", id=lambda x: x and "lblPhone" in x)
-                    phone = phone.text.strip() if phone else ''
-                except:
-                    pass
+                mobile = safe_find_text("lblMobile")
+                phone = safe_find_text("lblPhone")
 
-                # Website URL
+                # Website
                 website = ''
                 try:
                     website_btn = soup.find("button", text="Website")
@@ -259,25 +280,25 @@ for page in range(1, 5):  # Scrape first 4 pages
                                 city = spans[1].text.strip()
                                 location = city + ", UAE"
                                 break
-                except Exception as e:
-                    print(f"⚠️ Location extraction failed: {e}")
+                except:
+                    pass
 
-                # Product types
+                # Product Types
                 product_type = ''
                 try:
                     right_section = driver.find_element(By.CLASS_NAME, "flex.justify-between")
                     product_links = right_section.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
-                    product_type_list = []
+                    pt_list = []
                     for link in product_links:
                         if 'brands' in link.get_attribute('href').lower():
                             break
-                        product_type_list.append(link.text.strip())
-                    product_type = ", ".join([pt for pt in product_type_list if pt])
-                except Exception as e:
-                    print("❌ Product type not found:", e)
+                        pt_list.append(link.text.strip())
+                    product_type = ", ".join(pt_list)
+                except:
+                    pass
 
                 # Contact URL
-                contact_url = driver.current_url
+                contact_url = link
 
                 # Role detection
                 role = "Not Described"
@@ -287,7 +308,7 @@ for page in range(1, 5):  # Scrape first 4 pages
                         role = keyword.capitalize()
                         break
 
-                # Append Data
+                # Save record
                 data.append({
                     'Company Name': company_name,
                     'Website URL': website,
@@ -311,16 +332,16 @@ for page in range(1, 5):  # Scrape first 4 pages
         print(f"⚠️ No company cards found on page {page}: {e}")
         continue
 
-# ================================
-# 💾 Save to CSV
-# ================================
+# ==========================================================
+# 💾 Save CSV
+# ==========================================================
 if data:
     with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print("✅ Done! Data saved to yellowpages_bolts.csv")
+    print(f"✅ Done! Scraped {len(data)} records and saved to yellowpages_bolts.csv")
 else:
-    print("⚠️ No data scraped. Please check scraping logic.")
+    print("⚠️ No data scraped. Please check scraping logic or rendering.")
 
 driver.quit()
