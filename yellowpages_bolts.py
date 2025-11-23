@@ -158,146 +158,95 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager # <-- UNCOMMENTED/ADDED for remote setup
 from bs4 import BeautifulSoup
 import time
 import csv
-import urllib.parse 
-import sys 
+import os
 
-# --- CONFIGURATION (MANDATORY) ---
-# REPLACE THIS WITH YOUR ACTUAL SCRAPERAPI KEY
-SCRAPER_API_KEY = "4e0f35d8236f741f56d86ac31c941f95" 
+# ================================
+# 🔐 ScraperAPI Configuration
+# ================================
+SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY", "4e0f35d8236f741f56d86ac31c941f95")
+proxy = f"http://scraperapi:{SCRAPERAPI_KEY}@proxy-server.scraperapi.com:8001"
 
-def get_proxy_url(target_url):
-    """Wraps the target URL in the ScraperAPI Gateway format for remote execution."""
-    encoded_url = urllib.parse.quote(target_url)
-    # render=true ensures Javascript loads
-    return f"http://api.scraperapi.com/?api_key={SCRAPER_API_KEY}&url={encoded_url}&render=true"
-
-
-# Setup Chrome driver (Updated for remote/headless environments)
+# ================================
+# 🧭 Setup Chrome with ScraperAPI Proxy
+# ================================
 options = Options()
-options.add_argument("--headless=new") 
+options.add_argument("--headless")  # Comment this if you want to see browser
 options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage") 
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument(f"--proxy-server={proxy}")
+options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--window-size=1920,1080")
-options.add_argument('--disable-blink-features=AutomationControlled') 
 
-print("🚀 Initializing Chrome Driver...")
-try:
-    # Using ChromeDriverManager to handle driver binary (REQUIRED for GitHub Actions)
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.set_page_load_timeout(90)
-    print("✅ Driver initialized.")
-except Exception as e:
-    print(f"❌ Driver Init Failed: {e}")
-    sys.exit(1)
+driver = webdriver.Chrome(options=options)
 
-
-# MODIFICATION 1: Proxy the initial URL
-INITIAL_URL = "https://www.yellowpages-uae.com/uae/search?q=bolt&page=1"
-driver.get(get_proxy_url(INITIAL_URL))
-# No need to parse soup here, as we immediately start the loop
-
-# Update base_url to reflect the new search query structure
-base_url = "https://www.yellowpages-uae.com/uae/search?q=bolt&page={}"
+# ================================
+# 🌐 Base URL
+# ================================
+base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
-
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 2): # Update range for more pages
+# ================================
+# 🔁 Scraping Logic
+# ================================
+for page in range(1, 5):  # Update range for more pages
     print(f"🔁 Scraping page {page}...")
-    
-    # MODIFICATION 2: Proxy the listing page URL
-    driver.get(get_proxy_url(base_url.format(page)))
+    driver.get(base_url.format(page))
 
     try:
-        # Wait for the listing boxes to load
         WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
         )
-        
-        # --- CRITICAL FIX: Extract all necessary link data BEFORE iterating ---
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
-        company_links = []
-        for card in company_cards:
-            try:
-                link_elem = card.find_element(By.TAG_NAME, "a")
-                # Store the name and the href link in a list of tuples
-                company_links.append({
-                    'name': link_elem.text.strip(),
-                    'link': link_elem.get_attribute("href")
-                })
-            except Exception as e:
-                print(f"⚠️ Could not extract link/name from a card on page {page}: {e}")
-                continue # Skip to the next card
-        
-        print(f"   ✅ Found {len(company_links)} companies to process on page {page}.")
-        # --- END CRITICAL FIX ---
 
-        # Now, iterate over the stable 'company_links' list
-        for company_info in company_links:
-            link = company_info['link']
-            company_name = company_info['name']
-            
-            # Use the original Yellow Pages link for the proxy call
-            detail_proxy_url = get_proxy_url(link)
-            
+        for i in range(len(company_cards)):
+            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')  # Re-fetch
             try:
-                # Open the new window for the detail page
-                driver.execute_script("window.open(arguments[0]);", detail_proxy_url)
+                link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
+                driver.execute_script("arguments[0].scrollIntoView();", link_elem)
+                link = link_elem.get_attribute("href")
+                company_name = link_elem.text.strip()
+
+                # Open detail page in new tab
+                driver.execute_script("window.open(arguments[0]);", link)
                 driver.switch_to.window(driver.window_handles[-1])
-                
-                print(f"      ---> Opening Detail for: {company_name}")
-                
-                # Check for the 404 page content explicitly to fail fast
-                page_source = driver.page_source
-                if "404 Not Found" in page_source or "page you are looking for has changed" in page_source:
-                    raise Exception("Detail page returned 404 Not Found or changed.")
-
-                # Wait for the company name header on the detail page to confirm successful load
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1.text-3xl.font-semibold"))
-                )
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
                 soup = BeautifulSoup(driver.page_source, "html.parser")
-                text = soup.get_text(separator=" ", strip=True).lower()
 
-                # mobile number
+                # ====== Extract Fields ======
+                # Mobile number
+                mobile = ''
                 try:
                     mobile = soup.find("a", id=lambda x: x and "lblMobile" in x)
                     mobile = mobile.text.strip() if mobile else ''
                 except:
-                    mobile = ''
+                    pass
 
-                # phone number
+                # Phone number
+                phone = ''
                 try:
                     phone = soup.find("a", id=lambda x: x and "lblPhone" in x)
                     phone = phone.text.strip() if phone else ''
                 except:
-                    phone = ''
+                    pass
 
-                # Website URL (Updated selector to be more robust)
+                # Website URL
+                website = ''
                 try:
-                    # Find the button that is likely hidden but holds the URL
-                    website_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Website')]")
-                    website = website_btn.get_attribute("data-url")
-                    if not website or "undefined" in website:
-                        # Fallback to checking the title attribute if data-url is missing/broken
-                        website = website_btn.get_attribute("title")
-                    
-                    # If we still haven't found a decent URL, check the link wrapper
-                    if not website or "undefined" in website:
-                         # Attempt to find the anchor tag in the same structure if available
-                        website_link = soup.find('a', {'href': lambda href: href and 'website_redirection' in href})
-                        website = website_link['href'] if website_link else ''
+                    website_btn = soup.find("button", text="Website")
+                    website = website_btn['data-url'] if website_btn else ''
+                    if "undefined" in website:
+                        website = website_btn.get("title", "")
                 except:
-                    website = ''
+                    pass
 
+                # Location
+                location = ''
                 try:
-                    location = ""
-                    # The location structure seems stable in the new layout
                     info_container = soup.find("div", class_="grid grid-cols-2")
                     if info_container:
                         for p in info_container.find_all("p"):
@@ -308,32 +257,25 @@ for page in range(1, 2): # Update range for more pages
                                 break
                 except Exception as e:
                     print(f"⚠️ Location extraction failed: {e}")
-                    location = ""
 
+                # Product types
+                product_type = ''
                 try:
-                    # Find the entire right-side container for product links
                     right_section = driver.find_element(By.CLASS_NAME, "flex.justify-between")
-
-                    # Extract all <a> tags inside it
                     product_links = right_section.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
-
-                    # Filter out brands by looking for those BEFORE the span with "Brands :"
                     product_type_list = []
-                    for plink in product_links:
-                        # Ensure we don't accidentally stop at the "Brands" header text link
-                        if 'brands' in plink.get_attribute('href').lower() or plink.text.strip().lower() == 'brands':
-                            break  # stop when we hit the brands section
-                        product_type_list.append(plink.text.strip())
-
+                    for link in product_links:
+                        if 'brands' in link.get_attribute('href').lower():
+                            break
+                        product_type_list.append(link.text.strip())
                     product_type = ", ".join([pt for pt in product_type_list if pt])
                 except Exception as e:
-                    print(f"❌ Product type not found: {e}")
-                    product_type = ""
+                    print("❌ Product type not found:", e)
 
-                # Contact URL (from current page - which is the successful proxy URL)
+                # Contact URL
                 contact_url = driver.current_url
 
-                # Detect role
+                # Role detection
                 role = "Not Described"
                 combined_text = soup.get_text(" ", strip=True).lower()
                 for keyword in role_keywords:
@@ -341,7 +283,7 @@ for page in range(1, 2): # Update range for more pages
                         role = keyword.capitalize()
                         break
 
-                # Append data
+                # Append Data
                 data.append({
                     'Company Name': company_name,
                     'Website URL': website,
@@ -358,32 +300,16 @@ for page in range(1, 2): # Update range for more pages
                 time.sleep(1)
 
             except Exception as e:
-                print(f"❌ Error scraping company '{company_name}': {e}")
-                
-                # If an error occurs, still record the company name and the link that failed
-                data.append({
-                    'Company Name': company_name,
-                    'Website URL': '',
-                    'Product Types': '',
-                    'Mobile Number': '',
-                    'Phone Number': '',
-                    'Location': '',
-                    'Role': 'Error/404',
-                    'Contact Supplier URL': link # Record the original Yellow Pages link that failed
-                })
-
-                # Close the new window if an error occurred during scraping detail page
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-                
+                print(f"❌ Error scraping company: {e}")
                 continue
 
     except Exception as e:
         print(f"⚠️ No company cards found on page {page}: {e}")
         continue
 
-# Save to CSV
+# ================================
+# 💾 Save to CSV
+# ================================
 if data:
     with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
