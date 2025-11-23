@@ -104,17 +104,18 @@ jobs:
       # ======================================================================
       # 1. HAMMER UNIONS SCRAPE & UPLOAD (Existing Logic)
       # ======================================================================
-      - name: 🔨 Run Yellowpage Hammer Unions Scraping Script
-        run: python yellowpages_hammer_unions.py
+      # Temporary commented out for testing bolts
+      # - name: 🔨 Run Yellowpage Hammer Unions Scraping Script
+      #   run: python yellowpages_hammer_unions.py
 
-      - name: ⬆️ Upload Hammer Unions CSV to Google Sheets
-        # Pass environment variables specific to the Hammer Unions sheet
-        env:
-          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
-          GDRIVE_SHEET_ID: 19c0qMGKzF3s1oCq9-Wo3RAqi_uH93BCaSoxY6cGlUXQ # Target Sheet 1
-          LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
-          UPLOAD_FILE_NAME: yellowpages_hammer_unions.csv
-        run: python upload_to_gdrive.py
+      # - name: ⬆️ Upload Hammer Unions CSV to Google Sheets
+      #   # Pass environment variables specific to the Hammer Unions sheet
+      #   env:
+      #     GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
+      #     GDRIVE_SHEET_ID: 19c0qMGKzF3s1oCq9-Wo3RAqi_uH93BCaSoxY6cGlUXQ # Target Sheet 1
+      #     LOCAL_FILE_PATH: yellowpages_hammer_unions.csv
+      #     UPLOAD_FILE_NAME: yellowpages_hammer_unions.csv
+      #   run: python upload_to_gdrive.py
         
       # ======================================================================
       # 2. BOLTS SCRAPE & UPLOAD (New Logic for the second file)
