@@ -1,43 +1,238 @@
+# from selenium import webdriver
+# from selenium.webdriver.chrome.options import Options
+# from selenium.webdriver.common.by import By
+# from selenium.webdriver.support.ui import WebDriverWait
+# from selenium.webdriver.support import expected_conditions as EC
+# from selenium.webdriver.chrome.service import Service
+# from webdriver_manager.chrome import ChromeDriverManager # Make sure to install this
+# from bs4 import BeautifulSoup
+# import time
+# import csv
+# import sys
+
+# # --- Setup Chrome Options for GitHub Actions ---
+# options = Options()
+# # 1. Headless is MANDATORY in GitHub Actions
+# options.add_argument("--headless=new") 
+# # 2. Fixes "DevToolsActivePort file doesn't exist" in containers
+# options.add_argument("--no-sandbox")
+# # 3. CRITICAL: Prevents crashes due to limited shared memory in Docker/Linux
+# options.add_argument("--disable-dev-shm-usage")
+# # 4. Standard settings
+# options.add_argument("--disable-gpu")
+# options.add_argument("--window-size=1920,1080")
+
+# # 5. ANTI-BOT MEASURES (Crucial for Yellowpages)
+# # Spoof a real User-Agent so they don't see "HeadlessChrome"
+# user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+# options.add_argument(f'user-agent={user_agent}')
+# # Disable automation flags
+# options.add_argument('--disable-blink-features=AutomationControlled')
+# options.add_experimental_option("excludeSwitches", ["enable-automation"])
+# options.add_experimental_option('useAutomationExtension', False)
+
+# print("Initializing Chrome Driver...")
+# try:
+#     # Use ChromeDriverManager to automatically install the driver matching the container's Chrome
+#     service = Service(ChromeDriverManager().install())
+#     driver = webdriver.Chrome(service=service, options=options)
+    
+#     # 6. Advanced Stealth: Remove 'navigator.webdriver' property
+#     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+#         "source": """
+#             Object.defineProperty(navigator, 'webdriver', {
+#                 get: () => undefined
+#             })
+#         """
+#     })
+#     print("✅ Driver initialized successfully.")
+# except Exception as e:
+#     print(f"❌ Failed to initialize driver: {e}")
+#     sys.exit(1)
+
+# # --- Rest of your scraping logic below ---
+# driver.get("https://www.yellowpages-uae.com/uae/bolt?page=1")
+# # ... continue with your existing loop ...
+
+# soup = BeautifulSoup(driver.page_source, "html.parser")
+
+# base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
+# data = []
+
+# role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
+
+# for page in range(1, 5):  # Update range for more pages
+#     print(f"🔁 Scraping page {page}...")
+#     driver.get(base_url.format(page))
+
+#     try:
+#         WebDriverWait(driver, 15).until(
+#             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
+#         )
+#         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+
+#         for i in range(len(company_cards)):
+#             # Re-fetch elements to avoid stale reference
+#             company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+#             try:
+#                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
+#                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
+#                 link = link_elem.get_attribute("href")
+#                 company_name = link_elem.text.strip()
+
+#                 # Open detail page in new tab
+#                 driver.execute_script("window.open(arguments[0]);", link)
+#                 driver.switch_to.window(driver.window_handles[-1])
+#                 WebDriverWait(driver, 10).until(
+#                     EC.presence_of_element_located((By.TAG_NAME, "body"))
+#                 )
+
+#                 soup = BeautifulSoup(driver.page_source, "html.parser")
+#                 text = soup.get_text(separator=" ", strip=True).lower()
+
+#                 # mobile number
+#                 try:
+#                     mobile = soup.find("a", id=lambda x: x and "lblMobile" in x)
+#                     mobile = mobile.text.strip() if mobile else ''
+#                 except:
+#                     mobile = ''
+
+#                 # phone number
+#                 try:
+#                     phone = soup.find("a", id=lambda x: x and "lblPhone" in x)
+#                     phone = phone.text.strip() if phone else ''
+#                 except:
+#                     phone = ''
+
+#                 # Website URL
+#                 try:
+#                     website_btn = soup.find("button", text="Website")
+#                     website = website_btn['data-url'] if website_btn else ''
+#                     if "undefined" in website:
+#                         website = website_btn.get("title", "")
+#                 except:
+#                     website = ''
+
+#                 try:
+#                     location = ""
+#                     info_container = soup.find("div", class_="grid grid-cols-2")
+#                     if info_container:
+#                         for p in info_container.find_all("p"):
+#                             spans = p.find_all("span")
+#                             if len(spans) == 2 and "City :" in spans[0].text:
+#                                 city = spans[1].text.strip()
+#                                 location = city + ", UAE"
+#                                 break
+#                 except Exception as e:
+#                     print(f"⚠️ Location extraction failed: {e}")
+#                     location = ""
+
+#                 try:
+#                     # Find the entire right-side container
+#                     right_section = driver.find_element(By.CLASS_NAME, "flex.justify-between")
+
+#                     # Extract all <a> tags inside it
+#                     product_links = right_section.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
+
+#                     # Filter out brands by looking for those BEFORE the span with "Brands :"
+#                     product_type = []
+#                     for link in product_links:
+#                         if 'brands' in link.get_attribute('href').lower():
+#                             break  # stop when we hit the brands section
+#                         product_type.append(link.text.strip())
+
+#                     product_type = ", ".join([pt for pt in product_type if pt])
+#                 except Exception as e:
+#                     print("❌ Product type not found:", e)
+#                     product_type = ""
+
+#                 # Contact URL (from current page)
+#                 contact_url = driver.current_url
+
+#                 # Detect role
+#                 role = "Not Described"
+#                 combined_text = soup.get_text(" ", strip=True).lower()
+#                 for keyword in role_keywords:
+#                     if keyword in combined_text:
+#                         role = keyword.capitalize()
+#                         break
+
+#                 # Append data
+#                 data.append({
+#                     'Company Name': company_name,
+#                     'Website URL': website,
+#                     'Product Types': product_type,
+#                     'Mobile Number': mobile,
+#                     'Phone Number': phone,
+#                     'Location': location,
+#                     'Role': role,
+#                     'Contact Supplier URL': contact_url
+#                 })
+
+#                 driver.close()
+#                 driver.switch_to.window(driver.window_handles[0])
+#                 time.sleep(1)
+
+#             except Exception as e:
+#                 print(f"❌ Error scraping company: {e}")
+#                 continue
+
+#     except Exception as e:
+#         print(f"⚠️ No company cards found on page {page}: {e}")
+#         continue
+
+# # Save to CSV
+# if data:
+#     with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
+#         writer = csv.DictWriter(f, fieldnames=data[0].keys())
+#         writer.writeheader()
+#         writer.writerows(data)
+#     print("✅ Done! Data saved to yellowpages_bolts.csv")
+# else:
+#     print("⚠️ No data scraped. Please check scraping logic.")
+
+# driver.quit()
+
+
+
+
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager # Make sure to install this
+from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 import csv
 import sys
 
-# --- Setup Chrome Options for GitHub Actions ---
+# --- 1. SETUP CHROME OPTIONS FOR GITHUB ACTIONS ---
 options = Options()
-# 1. Headless is MANDATORY in GitHub Actions
-options.add_argument("--headless=new") 
-# 2. Fixes "DevToolsActivePort file doesn't exist" in containers
+options.add_argument("--headless=new")  # Modern headless mode (less detectable)
 options.add_argument("--no-sandbox")
-# 3. CRITICAL: Prevents crashes due to limited shared memory in Docker/Linux
 options.add_argument("--disable-dev-shm-usage")
-# 4. Standard settings
 options.add_argument("--disable-gpu")
-options.add_argument("--window-size=1920,1080")
+options.add_argument("--window-size=1920,1080") # Force Desktop Size
+options.add_argument("--start-maximized")
 
-# 5. ANTI-BOT MEASURES (Crucial for Yellowpages)
-# Spoof a real User-Agent so they don't see "HeadlessChrome"
+# Spoof User-Agent (Look like a real Windows PC)
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 options.add_argument(f'user-agent={user_agent}')
-# Disable automation flags
+
+# Disable Automation Flags (Hides "Chrome is being controlled by software")
 options.add_argument('--disable-blink-features=AutomationControlled')
 options.add_experimental_option("excludeSwitches", ["enable-automation"])
 options.add_experimental_option('useAutomationExtension', False)
 
 print("Initializing Chrome Driver...")
 try:
-    # Use ChromeDriverManager to automatically install the driver matching the container's Chrome
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     
-    # 6. Advanced Stealth: Remove 'navigator.webdriver' property
+    # Advanced Stealth: Remove navigator.webdriver flag
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
             Object.defineProperty(navigator, 'webdriver', {
@@ -45,128 +240,105 @@ try:
             })
         """
     })
-    print("✅ Driver initialized successfully.")
+    print("✅ Driver Initialized.")
 except Exception as e:
     print(f"❌ Failed to initialize driver: {e}")
     sys.exit(1)
 
-# --- Rest of your scraping logic below ---
-driver.get("https://www.yellowpages-uae.com/uae/bolt?page=1")
-# ... continue with your existing loop ...
-
-soup = BeautifulSoup(driver.page_source, "html.parser")
-
+# --- 2. SCRAPING LOGIC ---
 base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
-
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 5):  # Update range for more pages
-    print(f"🔁 Scraping page {page}...")
+for page in range(1, 2):  # Test with just 1 page first
+    print(f"\n🔁 Scraping page {page}...")
     driver.get(base_url.format(page))
+    
+    # Give it a moment to settle
+    time.sleep(5)
 
     try:
-        WebDriverWait(driver, 15).until(
+        # Check if we are on the right page by printing the title
+        print(f"   ℹ️ Page Title: {driver.title}")
+
+        # Wait for elements
+        WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
         )
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+        
+        print(f"   ✅ Found {len(company_cards)} cards.")
+
+        if not company_cards:
+            print("⚠️ Cards list empty.")
+            continue
 
         for i in range(len(company_cards)):
-            # Re-fetch elements to avoid stale reference
             company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
             try:
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
+                
+                # Scroll to element to ensure it's interactable
                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
+                time.sleep(0.5) 
+                
                 link = link_elem.get_attribute("href")
                 company_name = link_elem.text.strip()
+                
+                print(f"   --> Processing: {company_name}")
 
-                # Open detail page in new tab
                 driver.execute_script("window.open(arguments[0]);", link)
                 driver.switch_to.window(driver.window_handles[-1])
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-
+                
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                 soup = BeautifulSoup(driver.page_source, "html.parser")
-                text = soup.get_text(separator=" ", strip=True).lower()
 
-                # mobile number
+                # (Extraction logic kept same as your request)
+                mobile = ''
                 try:
-                    mobile = soup.find("a", id=lambda x: x and "lblMobile" in x)
-                    mobile = mobile.text.strip() if mobile else ''
-                except:
-                    mobile = ''
+                    m = soup.find("a", id=lambda x: x and "lblMobile" in x)
+                    mobile = m.text.strip() if m else ''
+                except: pass
 
-                # phone number
+                phone = ''
                 try:
-                    phone = soup.find("a", id=lambda x: x and "lblPhone" in x)
-                    phone = phone.text.strip() if phone else ''
-                except:
-                    phone = ''
+                    p = soup.find("a", id=lambda x: x and "lblPhone" in x)
+                    phone = p.text.strip() if p else ''
+                except: pass
 
-                # Website URL
+                website = ''
                 try:
-                    website_btn = soup.find("button", text="Website")
-                    website = website_btn['data-url'] if website_btn else ''
-                    if "undefined" in website:
-                        website = website_btn.get("title", "")
-                except:
-                    website = ''
+                    w = soup.find("button", attrs={"data-url": True})
+                    if w and "website" in w.text.lower(): website = w['data-url']
+                except: pass
 
+                location = ""
                 try:
-                    location = ""
-                    info_container = soup.find("div", class_="grid grid-cols-2")
-                    if info_container:
-                        for p in info_container.find_all("p"):
-                            spans = p.find_all("span")
-                            if len(spans) == 2 and "City :" in spans[0].text:
-                                city = spans[1].text.strip()
-                                location = city + ", UAE"
-                                break
-                except Exception as e:
-                    print(f"⚠️ Location extraction failed: {e}")
-                    location = ""
+                    info = soup.find("div", class_="grid grid-cols-2")
+                    if info:
+                        for p in info.find_all("p"):
+                            if "City :" in p.text:
+                                location = p.find_all("span")[1].text.strip() + ", UAE"
+                except: pass
 
+                product_type = ""
                 try:
-                    # Find the entire right-side container
-                    right_section = driver.find_element(By.CLASS_NAME, "flex.justify-between")
+                    rs = driver.find_element(By.CLASS_NAME, "flex.justify-between")
+                    pls = rs.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
+                    p_list = [pl.text.strip() for pl in pls if 'brands' not in pl.get_attribute('href').lower()]
+                    product_type = ", ".join(p_list)
+                except: pass
 
-                    # Extract all <a> tags inside it
-                    product_links = right_section.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
-
-                    # Filter out brands by looking for those BEFORE the span with "Brands :"
-                    product_type = []
-                    for link in product_links:
-                        if 'brands' in link.get_attribute('href').lower():
-                            break  # stop when we hit the brands section
-                        product_type.append(link.text.strip())
-
-                    product_type = ", ".join([pt for pt in product_type if pt])
-                except Exception as e:
-                    print("❌ Product type not found:", e)
-                    product_type = ""
-
-                # Contact URL (from current page)
                 contact_url = driver.current_url
-
-                # Detect role
                 role = "Not Described"
-                combined_text = soup.get_text(" ", strip=True).lower()
-                for keyword in role_keywords:
-                    if keyword in combined_text:
-                        role = keyword.capitalize()
-                        break
+                full_text = soup.get_text(" ", strip=True).lower()
+                for k in role_keywords:
+                    if k in full_text: role = k.capitalize(); break
 
-                # Append data
                 data.append({
-                    'Company Name': company_name,
-                    'Website URL': website,
-                    'Product Types': product_type,
-                    'Mobile Number': mobile,
-                    'Phone Number': phone,
-                    'Location': location,
-                    'Role': role,
-                    'Contact Supplier URL': contact_url
+                    'Company Name': company_name, 'Website URL': website, 'Product Types': product_type,
+                    'Mobile Number': mobile, 'Phone Number': phone, 'Location': location,
+                    'Role': role, 'Contact Supplier URL': contact_url
                 })
 
                 driver.close()
@@ -174,21 +346,31 @@ for page in range(1, 5):  # Update range for more pages
                 time.sleep(1)
 
             except Exception as e:
-                print(f"❌ Error scraping company: {e}")
+                print(f"   ❌ Error on card {i}: {e}")
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
                 continue
 
     except Exception as e:
-        print(f"⚠️ No company cards found on page {page}: {e}")
+        print(f"⚠️ FATAL ERROR on Page {page}: {e}")
+        
+        # --- CRITICAL DEBUGGING STEP ---
+        # If it fails, take a screenshot so you can see WHY
+        print("📸 Taking screenshot of error page...")
+        driver.save_screenshot("error_page_view.png")
+        # Print a snippet of the HTML to see if we are blocked
+        print(driver.page_source[:1000]) 
         continue
 
-# Save to CSV
+# Save CSV
 if data:
     with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print("✅ Done! Data saved to yellowpages_bolts.csv")
+    print("✅ CSV Saved Successfully.")
 else:
-    print("⚠️ No data scraped. Please check scraping logic.")
+    print("❌ No data collected.")
 
 driver.quit()
