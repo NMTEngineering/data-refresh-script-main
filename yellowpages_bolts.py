@@ -153,195 +153,156 @@
 
 
 """
-YellowPages UAE Scraper - Bolts Category (with ScraperAPI HTML rendering)
-------------------------------------------------------------------------
-✅ Works with ScraperAPI render=true to bypass dynamic loading issues.
-✅ Uses API key from GitHub secret (PROXY_STRING).
-✅ Exports yellowpages_bolts.csv
+YellowPages UAE Scraper (Bolts) - Reliable Rendered HTML Version
+-----------------------------------------------------------------
+✅ Uses ScraperAPI (render=true) for full page & detail page rendering
+✅ Does NOT rely on Selenium page load timing
+✅ Saves to yellowpages_bolts.csv
 """
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
+import requests
 from bs4 import BeautifulSoup
-import time
 import csv
 import os
-import urllib.parse
+import time
 
-# ==========================================================
-# 🔐 ScraperAPI Setup (use from PROXY_STRING or extract key)
-# ==========================================================
+# ================================
+# 🔐 ScraperAPI Setup
+# ================================
 proxy_env = os.getenv("PROXY_STRING", "")
-# Extract API key if full proxy string was provided
-# e.g., http://scraperapi:KEY@proxy-server.scraperapi.com:8001
 SCRAPERAPI_KEY = None
+
+# Extract key from full proxy string if needed
 if "@" in proxy_env and ":" in proxy_env:
     try:
         SCRAPERAPI_KEY = proxy_env.split(":")[2].split("@")[0]
     except Exception:
         SCRAPERAPI_KEY = None
 
-# Fallback: direct secret as raw key
+# Fallback if only key was stored directly
 if not SCRAPERAPI_KEY or len(SCRAPERAPI_KEY) < 10:
     SCRAPERAPI_KEY = proxy_env.strip()
 
 print(f"🔑 Using ScraperAPI Key: {SCRAPERAPI_KEY[:6]}****")
 
-# ==========================================================
-# 🧭 Setup Chrome (no need for proxy here)
-# ==========================================================
-options = Options()
-options.add_argument("--headless")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-blink-features=AutomationControlled")
-options.add_argument("--window-size=1920,1080")
+def scraperapi_get(url):
+    """Fetch rendered HTML through ScraperAPI"""
+    api_url = f"http://api.scraperapi.com?api_key={SCRAPERAPI_KEY}&url={url}&render=true"
+    r = requests.get(api_url, timeout=60)
+    r.raise_for_status()
+    return r.text
 
-driver = webdriver.Chrome(options=options)
-
-# ==========================================================
-# 🌐 Helper function to load page via ScraperAPI
-# ==========================================================
-def get_scraperapi_url(target_url):
-    encoded_url = urllib.parse.quote_plus(target_url)
-    return f"https://api.scraperapi.com/?api_key={SCRAPERAPI_KEY}&url={encoded_url}&render=true"
-
-# ==========================================================
-# 🧩 Main scraping logic
-# ==========================================================
+# ================================
+# 🌐 Base URLs
+# ================================
 base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
+# ================================
+# 🔁 Page Loop
+# ================================
 for page in range(1, 5):
     print(f"🔁 Scraping page {page}...")
-    target_url = get_scraperapi_url(base_url.format(page))
-    driver.get(target_url)
+    url = base_url.format(page)
+    html = scraperapi_get(url)
+    soup = BeautifulSoup(html, "html.parser")
 
-    try:
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
-        )
-        company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
-
-        if not company_cards:
-            print(f"⚠️ No company cards detected on page {page}")
-            continue
-
-        for i in range(len(company_cards)):
-            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')  # Refresh each iteration
-            try:
-                link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
-                driver.execute_script("arguments[0].scrollIntoView();", link_elem)
-                link = link_elem.get_attribute("href")
-                company_name = link_elem.text.strip()
-
-                # Open detail page through ScraperAPI (rendered)
-                detail_url = get_scraperapi_url(link)
-                driver.execute_script("window.open(arguments[0]);", detail_url)
-                driver.switch_to.window(driver.window_handles[-1])
-                WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-
-                # ====== Extract Fields ======
-                def safe_find_text(id_keyword):
-                    try:
-                        tag = soup.find("a", id=lambda x: x and id_keyword in x)
-                        return tag.text.strip() if tag else ''
-                    except:
-                        return ''
-
-                mobile = safe_find_text("lblMobile")
-                phone = safe_find_text("lblPhone")
-
-                # Website
-                website = ''
-                try:
-                    website_btn = soup.find("button", text="Website")
-                    website = website_btn['data-url'] if website_btn else ''
-                    if "undefined" in website:
-                        website = website_btn.get("title", "")
-                except:
-                    pass
-
-                # Location
-                location = ''
-                try:
-                    info_container = soup.find("div", class_="grid grid-cols-2")
-                    if info_container:
-                        for p in info_container.find_all("p"):
-                            spans = p.find_all("span")
-                            if len(spans) == 2 and "City :" in spans[0].text:
-                                city = spans[1].text.strip()
-                                location = city + ", UAE"
-                                break
-                except:
-                    pass
-
-                # Product Types
-                product_type = ''
-                try:
-                    right_section = driver.find_element(By.CLASS_NAME, "flex.justify-between")
-                    product_links = right_section.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
-                    pt_list = []
-                    for link in product_links:
-                        if 'brands' in link.get_attribute('href').lower():
-                            break
-                        pt_list.append(link.text.strip())
-                    product_type = ", ".join(pt_list)
-                except:
-                    pass
-
-                # Contact URL
-                contact_url = link
-
-                # Role detection
-                role = "Not Described"
-                combined_text = soup.get_text(" ", strip=True).lower()
-                for keyword in role_keywords:
-                    if keyword in combined_text:
-                        role = keyword.capitalize()
-                        break
-
-                # Save record
-                data.append({
-                    'Company Name': company_name,
-                    'Website URL': website,
-                    'Product Types': product_type,
-                    'Mobile Number': mobile,
-                    'Phone Number': phone,
-                    'Location': location,
-                    'Role': role,
-                    'Contact Supplier URL': contact_url
-                })
-
-                driver.close()
-                driver.switch_to.window(driver.window_handles[0])
-                time.sleep(1)
-
-            except Exception as e:
-                print(f"❌ Error scraping company: {e}")
-                continue
-
-    except Exception as e:
-        print(f"⚠️ No company cards found on page {page}: {e}")
+    company_cards = soup.select("div.box")
+    if not company_cards:
+        print(f"⚠️ No company cards found on page {page}")
         continue
 
-# ==========================================================
-# 💾 Save CSV
-# ==========================================================
+    print(f"✅ Found {len(company_cards)} companies on page {page}")
+
+    for card in company_cards:
+        try:
+            link_elem = card.find("a", href=True)
+            if not link_elem:
+                continue
+            company_name = link_elem.text.strip()
+            detail_link = link_elem["href"]
+
+            # Fetch detail page
+            detail_html = scraperapi_get(detail_link)
+            detail_soup = BeautifulSoup(detail_html, "html.parser")
+
+            # Extract phone/mobile
+            def find_text_by_id(keyword):
+                tag = detail_soup.find("a", id=lambda x: x and keyword in x)
+                return tag.text.strip() if tag else ''
+
+            mobile = find_text_by_id("lblMobile")
+            phone = find_text_by_id("lblPhone")
+
+            # Website
+            website = ''
+            try:
+                website_btn = detail_soup.find("button", text="Website")
+                if website_btn and website_btn.has_attr("data-url"):
+                    website = website_btn["data-url"]
+                elif website_btn and website_btn.has_attr("title"):
+                    website = website_btn["title"]
+            except:
+                pass
+
+            # Location
+            location = ''
+            info_container = detail_soup.find("div", class_="grid grid-cols-2")
+            if info_container:
+                for p in info_container.find_all("p"):
+                    spans = p.find_all("span")
+                    if len(spans) == 2 and "City :" in spans[0].text:
+                        city = spans[1].text.strip()
+                        location = f"{city}, UAE"
+                        break
+
+            # Product types
+            product_type = ''
+            right_section = detail_soup.find("div", class_="flex justify-between")
+            if right_section:
+                product_links = right_section.find_all("a", class_="text-[#1e2f71]")
+                types = []
+                for plink in product_links:
+                    if "brands" in plink.get("href", "").lower():
+                        break
+                    types.append(plink.text.strip())
+                product_type = ", ".join(types)
+
+            # Detect role
+            role = "Not Described"
+            combined_text = detail_soup.get_text(" ", strip=True).lower()
+            for keyword in role_keywords:
+                if keyword in combined_text:
+                    role = keyword.capitalize()
+                    break
+
+            data.append({
+                "Company Name": company_name,
+                "Website URL": website,
+                "Product Types": product_type,
+                "Mobile Number": mobile,
+                "Phone Number": phone,
+                "Location": location,
+                "Role": role,
+                "Contact Supplier URL": detail_link
+            })
+
+            print(f"   ✅ {company_name}")
+            time.sleep(1)  # polite delay
+
+        except Exception as e:
+            print(f"❌ Error scraping a company: {e}")
+            continue
+
+# ================================
+# 💾 Save Results
+# ================================
 if data:
     with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print(f"✅ Done! Scraped {len(data)} records and saved to yellowpages_bolts.csv")
+    print(f"\n✅ Done! Scraped {len(data)} companies → yellowpages_bolts.csv")
 else:
-    print("⚠️ No data scraped. Please check scraping logic or rendering.")
-
-driver.quit()
+    print("⚠️ No data scraped. Please check scraper logic or site structure.")
