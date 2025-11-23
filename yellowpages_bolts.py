@@ -196,10 +196,13 @@ except Exception as e:
 
 
 # MODIFICATION 1: Proxy the initial URL
-driver.get(get_proxy_url("https://www.yellowpages-uae.com/uae/bolt?page=1"))
+# We will use the 'bolt' keyword for consistency
+INITIAL_URL = "https://www.yellowpages-uae.com/uae/search?q=bolt&page=1"
+driver.get(get_proxy_url(INITIAL_URL))
 soup = BeautifulSoup(driver.page_source, "html.parser")
 
-base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
+# Update base_url to reflect the new search query structure
+base_url = "https://www.yellowpages-uae.com/uae/search?q=bolt&page={}"
 data = []
 
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
@@ -211,6 +214,7 @@ for page in range(1, 5): # Update range for more pages
     driver.get(get_proxy_url(base_url.format(page)))
 
     try:
+        # Wait for the listing boxes to load
         WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
         )
@@ -223,6 +227,7 @@ for page in range(1, 5): # Update range for more pages
             try:
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
+                # The link is currently correct, so we keep it.
                 link = link_elem.get_attribute("href")
                 company_name = link_elem.text.strip()
 
@@ -232,8 +237,15 @@ for page in range(1, 5): # Update range for more pages
                 driver.switch_to.window(driver.window_handles[-1])
                 
                 print(f"      ---> Opening Detail for: {company_name}")
+                
+                # Check for the 404 page content explicitly to fail fast
+                page_source = driver.page_source
+                if "404 Not Found" in page_source or "page you are looking for has changed" in page_source:
+                    raise Exception("Detail page returned 404 Not Found or changed.")
+
+                # Wait for the company name header on the detail page to confirm successful load
                 WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1.text-3xl.font-semibold"))
                 )
 
                 soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -253,17 +265,26 @@ for page in range(1, 5): # Update range for more pages
                 except:
                     phone = ''
 
-                # Website URL
+                # Website URL (Updated selector to be more robust)
                 try:
-                    website_btn = soup.find("button", text="Website")
-                    website = website_btn['data-url'] if website_btn else ''
-                    if "undefined" in website:
-                        website = website_btn.get("title", "")
+                    # Find the button that is likely hidden but holds the URL
+                    website_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Website')]")
+                    website = website_btn.get_attribute("data-url")
+                    if not website or "undefined" in website:
+                        # Fallback to checking the title attribute if data-url is missing/broken
+                        website = website_btn.get_attribute("title")
+                    
+                    # If we still haven't found a decent URL, check the link wrapper
+                    if not website or "undefined" in website:
+                         # Attempt to find the anchor tag in the same structure if available
+                        website_link = soup.find('a', {'href': lambda href: href and 'website_redirection' in href})
+                        website = website_link['href'] if website_link else ''
                 except:
                     website = ''
 
                 try:
                     location = ""
+                    # The location structure seems stable in the new layout
                     info_container = soup.find("div", class_="grid grid-cols-2")
                     if info_container:
                         for p in info_container.find_all("p"):
@@ -277,9 +298,7 @@ for page in range(1, 5): # Update range for more pages
                     location = ""
 
                 try:
-                    # Find the entire right-side container
-                    # NOTE: This selector might still be brittle in remote environments. 
-                    # If you encounter NoSuchElementException, consider using a more robust XPath.
+                    # Find the entire right-side container for product links
                     right_section = driver.find_element(By.CLASS_NAME, "flex.justify-between")
 
                     # Extract all <a> tags inside it
@@ -288,16 +307,17 @@ for page in range(1, 5): # Update range for more pages
                     # Filter out brands by looking for those BEFORE the span with "Brands :"
                     product_type_list = []
                     for plink in product_links:
-                        if 'brands' in plink.get_attribute('href').lower():
+                        # Ensure we don't accidentally stop at the "Brands" header text link
+                        if 'brands' in plink.get_attribute('href').lower() or plink.text.strip().lower() == 'brands':
                             break  # stop when we hit the brands section
                         product_type_list.append(plink.text.strip())
 
                     product_type = ", ".join([pt for pt in product_type_list if pt])
                 except Exception as e:
-                    print("❌ Product type not found:", e)
+                    print(f"❌ Product type not found: {e}")
                     product_type = ""
 
-                # Contact URL (from current page)
+                # Contact URL (from current page - which is the successful proxy URL)
                 contact_url = driver.current_url
 
                 # Detect role
@@ -325,8 +345,20 @@ for page in range(1, 5): # Update range for more pages
                 time.sleep(1)
 
             except Exception as e:
-                print(f"❌ Error scraping company: {e}")
+                print(f"❌ Error scraping company '{company_name}': {e}")
                 
+                # If an error occurs, still record the company name and the link that failed
+                data.append({
+                    'Company Name': company_name,
+                    'Website URL': '',
+                    'Product Types': '',
+                    'Mobile Number': '',
+                    'Phone Number': '',
+                    'Location': '',
+                    'Role': 'Error/404',
+                    'Contact Supplier URL': link # Record the original Yellow Pages link that failed
+                })
+
                 # Close the new window if an error occurred during scraping detail page
                 if len(driver.window_handles) > 1:
                     driver.close()
