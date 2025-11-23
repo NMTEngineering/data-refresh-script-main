@@ -178,6 +178,7 @@ def get_proxy_url(target_url):
 
 # --- SETUP CHROME ---
 options = Options()
+# Using 'new' headless mode for better compatibility
 options.add_argument("--headless=new") 
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
@@ -199,7 +200,8 @@ base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 3):  # Running 2 pages for quick debug
+# Run 4 pages now that we are confident the core loop works
+for page in range(1, 5): 
     print(f"\n🔁 Scraping page {page}...")
     
     target_url = base_url.format(page)
@@ -227,7 +229,6 @@ for page in range(1, 3):  # Running 2 pages for quick debug
             real_link = ''
             
             try:
-                # --- NEW DEBUG LOG ---
                 print(f"      ---> Processing Card {i+1}...")
                 
                 # Refresh elements
@@ -235,7 +236,8 @@ for page in range(1, 3):  # Running 2 pages for quick debug
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
                 
                 real_link = link_elem.get_attribute("href")
-                company_name = link_elem.text.strip().replace('\n', ' ').split('More Info')[0].strip() # Clean name 
+                # Clean up the company name
+                company_name = link_elem.text.strip().replace('\n', ' ').split('More Info')[0].strip()
                 
                 # OPEN DETAIL PAGE VIA GATEWAY
                 detail_proxy_url = get_proxy_url(real_link)
@@ -256,82 +258,90 @@ for page in range(1, 3):  # Running 2 pages for quick debug
                 # --- Extraction ---
                 mobile = ''; phone = ''; website = ''; location = ''; product_type = ''; role = "Not Described"
 
-                # 1. Mobile Number Extraction
+                # 1. Mobile Number Extraction (BS4 by ID)
                 try:
                     m = soup.find("a", id=lambda x: x and "lblMobile" in x)
                     mobile = m.text.strip() if m else ''
                 except Exception as e:
-                    print(f"      🚨 Mobile Error: {e}")
+                    print(f"      🚨 Mobile Error: {type(e).__name__} - {e}")
                     
-                # 2. Phone Number Extraction
+                # 2. Phone Number Extraction (BS4 by ID)
                 try:
                     p = soup.find("a", id=lambda x: x and "lblPhone" in x)
                     phone = p.text.strip() if p else ''
                 except Exception as e:
-                    print(f"      🚨 Phone Error: {e}")
+                    print(f"      🚨 Phone Error: {type(e).__name__} - {e}")
 
-                # 3. Website URL Extraction
+                # 3. Website URL Extraction (BS4 by button attribute)
                 try:
+                    # Look for button that contains 'Website' text or has data-url
                     w = soup.find("button", attrs={"data-url": True})
-                    if w and "website" in w.text.lower(): 
+                    if w and "website" in w.text.lower():
                         website = w['data-url']
-                except Exception as e:
-                    print(f"      🚨 Website Error: {e}")
-
-                # 4. Location Extraction
-                try:
-                    # Look for the grid that contains location data
-                    info = soup.find("div", class_="grid grid-cols-2")
-                    if info:
-                        for p in info.find_all("p"):
-                            if "City :" in p.text:
-                                location = p.find_all("span")[1].text.strip() + ", UAE"
-                except Exception as e:
-                    print(f"      🚨 Location Error: {e}")
-
-                # 5. Product Type Extraction (This relies on Selenium finding dynamic links)
-                try:
-                    # Use CSS selector to find the relevant container
-                    rs = driver.find_element(By.CSS_SELECTOR, ".flex.justify-between")
                     
-                    # Find product links within that container
-                    # This XPath targets <a> tags with the specific text color class
-                    pls = rs.find_elements(By.XPATH, ".//a[contains(@class, 'text-[#1e2f71]')]")
+                    if not website:
+                        # Fallback for buttons with just the 'title'
+                        w_title = soup.find("button", title=lambda x: x and ("http" in x or "https" in x))
+                        website = w_title['title'] if w_title else ''
+                        
+                except Exception as e:
+                    print(f"      🚨 Website Error: {type(e).__name__} - {e}")
+
+                # 4. Location Extraction (BS4 by grid class)
+                try:
+                    info_container = soup.find("div", class_="grid grid-cols-2")
+                    if info_container:
+                        for p in info_container.find_all("p"):
+                            spans = p.find_all("span")
+                            # Check if the text matches the label format (e.g., "City :")
+                            if len(spans) == 2 and "City :" in spans[0].text:
+                                city = spans[1].text.strip()
+                                location = city + ", UAE"
+                                break
+                except Exception as e:
+                    print(f"      🚨 Location Error: {type(e).__name__} - {e}")
+
+                # 5. Product Type Extraction (NEW XPATH/Selenium Approach)
+                # This approach looks for the stable structure containing the links
+                try:
+                    # Look for any element that contains anchor tags with the specific blue link color.
+                    # This is much more flexible than relying on 'flex justify-between'
+                    product_container = driver.find_element(By.XPATH, "//div[.//a[contains(@class, 'text-[#1e2f71]')]]")
+                    
+                    # Extract all links within that container
+                    pls = product_container.find_elements(By.TAG_NAME, 'a')
                     
                     # Filter out links that are not product related (like 'brands')
-                    p_list = [pl.text.strip() for pl in pls if 'brands' not in pl.get_attribute('href').lower()]
+                    p_list = [pl.text.strip() for pl in pls if 'brands' not in pl.get_attribute('href').lower() and pl.text.strip()]
                     product_type = ", ".join(p_list)
+                    
+                    if not product_type:
+                         print("      ⚠️ Found container, but extracted product list was empty/only brands.")
                 except Exception as e:
-                    # If this fails, try falling back to BeautifulSoup (less reliable for dynamic content)
-                    try:
-                        product_div = soup.find('div', class_='flex justify-between')
-                        p_list = [a.text.strip() for a in product_div.find_all('a') if 'brands' not in a.get('href', '').lower()]
-                        product_type = ", ".join(p_list)
-                    except Exception as fallback_e:
-                        print(f"      🚨 Product Type Error (Selenium/BS4): {e} / Fallback: {fallback_e}")
-                        pass
-                
-                # 6. Role Extraction
+                    print(f"      🚨 Product Type Error (XPATH/Selenium): {type(e).__name__} - {e}")
+                    pass # Keep product_type as ''
+
+                # 6. Role Extraction (BS4 - text-based)
                 full_text = soup.get_text(" ", strip=True).lower()
                 for k in role_keywords:
                     if k in full_text: 
                         role = k.capitalize()
                         break
                 
-                # Append data (success)
+                # Append data
                 data.append({
                     'Company Name': company_name, 'Website URL': website, 'Product Types': product_type,
                     'Mobile Number': mobile, 'Phone Number': phone, 'Location': location,
                     'Role': role, 'Contact Supplier URL': real_link
                 })
                 
-                print(f"      ---> SUCCESS: Data for {company_name} appended.")
+                print(f"      ---> SUCCESS: Data for {company_name} appended. Products: '{product_type}'")
 
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
                 
             except Exception as e:
-                # --- CRITICAL DEBUG CHANGE: PRINT THE ERROR ---
+                # Fatal error for current card (e.g., failed to get link)
                 print(f"\n   ❌ FATAL CARD ERROR on Card {i+1} ({company_name}): {type(e).__name__} - {e}\n")
                 
                 # Clean up if tab is open
@@ -347,12 +357,13 @@ for page in range(1, 3):  # Running 2 pages for quick debug
 
 # --- FINAL SAVE & CLEANUP ---
 if data:
-    with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
+    output_path = "yellowpages_bolts.csv"
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print("✅ CSV Saved: yellowpages_bolts.csv")
+    print(f"\n✅ CSV Saved: {output_path}. Total records: {len(data)}")
 else:
-    print("❌ No data collected. Please examine the debug output for '🚨' errors.")
+    print("\n❌ No data collected. Please examine the debug output for '🚨' errors.")
 
 driver.quit()
