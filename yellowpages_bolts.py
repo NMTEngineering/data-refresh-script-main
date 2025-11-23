@@ -162,8 +162,8 @@ from webdriver_manager.chrome import ChromeDriverManager # <-- UNCOMMENTED/ADDED
 from bs4 import BeautifulSoup
 import time
 import csv
-import urllib.parse # <-- ADDED for proxy URL encoding
-import sys # <-- ADDED for clean exit on driver failure
+import urllib.parse 
+import sys 
 
 # --- CONFIGURATION (MANDATORY) ---
 # REPLACE THIS WITH YOUR ACTUAL SCRAPERAPI KEY
@@ -178,11 +178,11 @@ def get_proxy_url(target_url):
 
 # Setup Chrome driver (Updated for remote/headless environments)
 options = Options()
-options.add_argument("--headless=new") # Use new headless mode (CLEANED)
+options.add_argument("--headless=new") 
 options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage") # Added for better remote stability
+options.add_argument("--disable-dev-shm-usage") 
 options.add_argument("--window-size=1920,1080")
-options.add_argument('--disable-blink-features=AutomationControlled') # Added for better stealth
+options.add_argument('--disable-blink-features=AutomationControlled') 
 
 print("🚀 Initializing Chrome Driver...")
 try:
@@ -196,10 +196,9 @@ except Exception as e:
 
 
 # MODIFICATION 1: Proxy the initial URL
-# We will use the 'bolt' keyword for consistency
 INITIAL_URL = "https://www.yellowpages-uae.com/uae/search?q=bolt&page=1"
 driver.get(get_proxy_url(INITIAL_URL))
-soup = BeautifulSoup(driver.page_source, "html.parser")
+# No need to parse soup here, as we immediately start the loop
 
 # Update base_url to reflect the new search query structure
 base_url = "https://www.yellowpages-uae.com/uae/search?q=bolt&page={}"
@@ -207,7 +206,7 @@ data = []
 
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 5): # Update range for more pages
+for page in range(1, 2): # Update range for more pages
     print(f"🔁 Scraping page {page}...")
     
     # MODIFICATION 2: Proxy the listing page URL
@@ -218,21 +217,35 @@ for page in range(1, 5): # Update range for more pages
         WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
         )
+        
+        # --- CRITICAL FIX: Extract all necessary link data BEFORE iterating ---
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
-        print(f"   ✅ Found {len(company_cards)} companies on page {page}.")
-
-        for i in range(len(company_cards)):
-            # Re-fetch elements to avoid stale reference
-            company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+        company_links = []
+        for card in company_cards:
             try:
-                link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
-                driver.execute_script("arguments[0].scrollIntoView();", link_elem)
-                # The link is currently correct, so we keep it.
-                link = link_elem.get_attribute("href")
-                company_name = link_elem.text.strip()
+                link_elem = card.find_element(By.TAG_NAME, "a")
+                # Store the name and the href link in a list of tuples
+                company_links.append({
+                    'name': link_elem.text.strip(),
+                    'link': link_elem.get_attribute("href")
+                })
+            except Exception as e:
+                print(f"⚠️ Could not extract link/name from a card on page {page}: {e}")
+                continue # Skip to the next card
+        
+        print(f"   ✅ Found {len(company_links)} companies to process on page {page}.")
+        # --- END CRITICAL FIX ---
 
-                # MODIFICATION 3: Proxy the detail page URL
-                detail_proxy_url = get_proxy_url(link)
+        # Now, iterate over the stable 'company_links' list
+        for company_info in company_links:
+            link = company_info['link']
+            company_name = company_info['name']
+            
+            # Use the original Yellow Pages link for the proxy call
+            detail_proxy_url = get_proxy_url(link)
+            
+            try:
+                # Open the new window for the detail page
                 driver.execute_script("window.open(arguments[0]);", detail_proxy_url)
                 driver.switch_to.window(driver.window_handles[-1])
                 
