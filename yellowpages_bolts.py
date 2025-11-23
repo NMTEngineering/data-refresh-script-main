@@ -196,7 +196,160 @@
 
 
 
+#without hardcoded url
+# from selenium import webdriver
+# from selenium.webdriver.chrome.options import Options
+# from selenium.webdriver.common.by import By
+# from selenium.webdriver.support.ui import WebDriverWait
+# from selenium.webdriver.support import expected_conditions as EC
+# from selenium.webdriver.chrome.service import Service
+# from webdriver_manager.chrome import ChromeDriverManager
+# from bs4 import BeautifulSoup
+# import time
+# import csv
+# import sys
+# import os
 
+# # --- SETUP CHROME ---
+# options = Options()
+# options.add_argument("--headless=new") 
+# options.add_argument("--no-sandbox")
+# options.add_argument("--disable-dev-shm-usage")
+# options.add_argument("--window-size=1920,1080")
+# options.add_argument('--disable-blink-features=AutomationControlled')
+
+# # --- 1. PROXY CONFIGURATION (CRITICAL) ---
+# proxy_server = os.environ.get("PROXY_STRING") 
+# if proxy_server:
+#     print(f"🌍 Using Proxy: {proxy_server}")
+#     options.add_argument(f'--proxy-server={proxy_server}')
+# else:
+#     print("⚠️ WARNING: No Proxy found. Request might be blocked.")
+
+# print("Initializing Chrome Driver...")
+# try:
+#     service = Service(ChromeDriverManager().install())
+#     driver = webdriver.Chrome(service=service, options=options)
+#     print("✅ Driver initialized.")
+# except Exception as e:
+#     print(f"❌ Driver Init Failed: {e}")
+#     sys.exit(1)
+
+# # --- 2. SCRAPING LOGIC ---
+# base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
+# data = []
+# role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
+
+# for page in range(1, 5): 
+#     print(f"\n🔁 Scraping page {page}...")
+#     try:
+#         driver.get(base_url.format(page))
+#         time.sleep(2) # Polite delay
+
+#         if "Access Denied" in driver.title:
+#             print("❌ Blocked by Website.")
+#             continue
+
+#         WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box')))
+#         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+        
+#         if not company_cards:
+#             print("⚠️ No cards found.")
+#             continue
+            
+#         print(f"   ✅ Found {len(company_cards)} companies.")
+
+#         for i in range(len(company_cards)):
+#             try:
+#                 # Refresh elements
+#                 company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
+#                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
+                
+#                 driver.execute_script("arguments[0].scrollIntoView();", link_elem)
+#                 link = link_elem.get_attribute("href")
+#                 company_name = link_elem.text.strip()
+                
+#                 driver.execute_script("window.open(arguments[0]);", link)
+#                 driver.switch_to.window(driver.window_handles[-1])
+#                 WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                
+#                 soup = BeautifulSoup(driver.page_source, "html.parser")
+
+#                 # Extraction
+#                 mobile = ''
+#                 try:
+#                     m = soup.find("a", id=lambda x: x and "lblMobile" in x)
+#                     mobile = m.text.strip() if m else ''
+#                 except: pass
+
+#                 phone = ''
+#                 try:
+#                     p = soup.find("a", id=lambda x: x and "lblPhone" in x)
+#                     phone = p.text.strip() if p else ''
+#                 except: pass
+
+#                 website = ''
+#                 try:
+#                     w = soup.find("button", attrs={"data-url": True})
+#                     if w and "website" in w.text.lower(): website = w['data-url']
+#                 except: pass
+
+#                 location = ""
+#                 try:
+#                     info = soup.find("div", class_="grid grid-cols-2")
+#                     if info:
+#                         for p in info.find_all("p"):
+#                             if "City :" in p.text:
+#                                 location = p.find_all("span")[1].text.strip() + ", UAE"
+#                 except: pass
+
+#                 product_type = ""
+#                 try:
+#                     rs = driver.find_element(By.CLASS_NAME, "flex.justify-between")
+#                     pls = rs.find_elements(By.XPATH, ".//a[@class='text-[#1e2f71]']")
+#                     p_list = [pl.text.strip() for pl in pls if 'brands' not in pl.get_attribute('href').lower()]
+#                     product_type = ", ".join(p_list)
+#                 except: pass
+
+#                 contact_url = driver.current_url
+#                 role = "Not Described"
+#                 full_text = soup.get_text(" ", strip=True).lower()
+#                 for k in role_keywords:
+#                     if k in full_text: role = k.capitalize(); break
+
+#                 data.append({
+#                     'Company Name': company_name, 'Website URL': website, 'Product Types': product_type,
+#                     'Mobile Number': mobile, 'Phone Number': phone, 'Location': location,
+#                     'Role': role, 'Contact Supplier URL': contact_url
+#                 })
+
+#                 driver.close()
+#                 driver.switch_to.window(driver.window_handles[0])
+#             except Exception:
+#                 if len(driver.window_handles) > 1:
+#                     driver.close()
+#                     driver.switch_to.window(driver.window_handles[0])
+#                 continue
+
+#     except Exception as e:
+#         print(f"⚠️ Page error: {e}")
+
+# # Save CSV
+# if data:
+#     with open("yellowpages_bolts.csv", "w", newline="", encoding="utf-8") as f:
+#         writer = csv.DictWriter(f, fieldnames=data[0].keys())
+#         writer.writeheader()
+#         writer.writerows(data)
+#     print("✅ CSV Saved: yellowpages_bolts.csv")
+# else:
+#     print("❌ No data collected.")
+
+# driver.quit()
+
+
+
+
+# hard coded scraper api
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -208,7 +361,17 @@ from bs4 import BeautifulSoup
 import time
 import csv
 import sys
-import os
+import urllib.parse
+
+# --- CONFIGURATION ---
+# We use your API Key directly in the URL to avoid browser auth issues
+SCRAPER_API_KEY = "4e0f35d8236f741f56d86ac31c941f95"
+
+def get_proxy_url(target_url):
+    """Wraps the target URL in the ScraperAPI Gateway format"""
+    encoded_url = urllib.parse.quote(target_url)
+    # render=true ensures Javascript loads
+    return f"http://api.scraperapi.com/?api_key={SCRAPER_API_KEY}&url={encoded_url}&render=true"
 
 # --- SETUP CHROME ---
 options = Options()
@@ -218,14 +381,7 @@ options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--window-size=1920,1080")
 options.add_argument('--disable-blink-features=AutomationControlled')
 
-# --- 1. PROXY CONFIGURATION (CRITICAL) ---
-proxy_server = os.environ.get("PROXY_STRING") 
-if proxy_server:
-    print(f"🌍 Using Proxy: {proxy_server}")
-    options.add_argument(f'--proxy-server={proxy_server}')
-else:
-    print("⚠️ WARNING: No Proxy found. Request might be blocked.")
-
+# NOTE: We REMOVED the --proxy-server argument because we are using Gateway Mode
 print("Initializing Chrome Driver...")
 try:
     service = Service(ChromeDriverManager().install())
@@ -235,28 +391,38 @@ except Exception as e:
     print(f"❌ Driver Init Failed: {e}")
     sys.exit(1)
 
-# --- 2. SCRAPING LOGIC ---
+# --- SCRAPING LOGIC ---
 base_url = "https://www.yellowpages-uae.com/uae/bolt?page={}"
 data = []
 role_keywords = ["manufacturer", "supplier", "distributor", "dealer", "stockist", "exporter", "trader", "retailer"]
 
-for page in range(1, 5): 
+for page in range(1, 3):  # Reduced to 2 pages for testing speed
     print(f"\n🔁 Scraping page {page}...")
+    
+    # 1. CONSTRUCT PROXY URL
+    target_url = base_url.format(page)
+    proxy_url = get_proxy_url(target_url)
+    
+    print(f"   ⏳ Requesting via ScraperAPI (this takes 20-40s)...")
+    
     try:
-        driver.get(base_url.format(page))
-        time.sleep(2) # Polite delay
-
-        if "Access Denied" in driver.title:
-            print("❌ Blocked by Website.")
+        driver.get(proxy_url)
+        
+        # Check if ScraperAPI gave us an error
+        if "Request failed" in driver.page_source or "Access Denied" in driver.title:
+            print("❌ ScraperAPI failed to retrieve this page.")
             continue
 
-        WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box')))
+        # 2. INCREASED TIMEOUT (Crucial for Proxies)
+        WebDriverWait(driver, 60).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.box'))
+        )
         company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
         
         if not company_cards:
-            print("⚠️ No cards found.")
+            print("⚠️ No cards found (Possible layout change or empty page).")
             continue
-            
+
         print(f"   ✅ Found {len(company_cards)} companies.")
 
         for i in range(len(company_cards)):
@@ -265,17 +431,21 @@ for page in range(1, 5):
                 company_cards = driver.find_elements(By.CSS_SELECTOR, 'div.box')
                 link_elem = company_cards[i].find_element(By.TAG_NAME, "a")
                 
-                driver.execute_script("arguments[0].scrollIntoView();", link_elem)
                 link = link_elem.get_attribute("href")
                 company_name = link_elem.text.strip()
                 
-                driver.execute_script("window.open(arguments[0]);", link)
-                driver.switch_to.window(driver.window_handles[-1])
-                WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                # 3. OPEN DETAIL PAGE VIA PROXY
+                # We must wrap the detail link in the proxy URL too!
+                detail_proxy_url = get_proxy_url(link)
                 
+                driver.execute_script("window.open(arguments[0]);", detail_proxy_url)
+                driver.switch_to.window(driver.window_handles[-1])
+                
+                # Wait for detail page load
+                WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                 soup = BeautifulSoup(driver.page_source, "html.parser")
 
-                # Extraction
+                # --- Extraction ---
                 mobile = ''
                 try:
                     m = soup.find("a", id=lambda x: x and "lblMobile" in x)
@@ -311,11 +481,13 @@ for page in range(1, 5):
                     product_type = ", ".join(p_list)
                 except: pass
 
-                contact_url = driver.current_url
+                contact_url = link # Store the real URL, not the proxy one
                 role = "Not Described"
                 full_text = soup.get_text(" ", strip=True).lower()
                 for k in role_keywords:
                     if k in full_text: role = k.capitalize(); break
+
+                print(f"   --> Extracted: {company_name}")
 
                 data.append({
                     'Company Name': company_name, 'Website URL': website, 'Product Types': product_type,
@@ -325,14 +497,16 @@ for page in range(1, 5):
 
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
-            except Exception:
+                
+            except Exception as e:
+                # print(f"   ❌ Error on card: {e}") 
                 if len(driver.window_handles) > 1:
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
                 continue
 
     except Exception as e:
-        print(f"⚠️ Page error: {e}")
+        print(f"⚠️ Page Load Error: {e}")
 
 # Save CSV
 if data:
