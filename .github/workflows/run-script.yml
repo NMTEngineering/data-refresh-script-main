@@ -122,17 +122,34 @@ jobs:
       # ======================================================================
       # NOTE: You must have a Python file named 'yellowpages_bolts.py' for this step
       - name: 🔩 Run Yellowpage Bolts Scraping Script
+        # CRITICAL: Pass the Proxy Secret to the script
+        env:
+          PROXY_STRING: ${{ secrets.PROXY_STRING }}
         run: python yellowpages_bolts.py
 
       - name: ⬆️ Upload Bolts CSV to Google Sheets
-        # Pass environment variables specific to the Bolts sheet
         env:
+          # Secret containing the JSON credentials
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
-          # *** IMPORTANT: REPLACE THIS PLACEHOLDER WITH YOUR SECOND SHEET ID ***
+          # Target Google Sheet ID
           GDRIVE_SHEET_ID: 1DTTYXlaePfomR6KV5XvbHlwWr0EUSW3CsC4it38GwSw 
           LOCAL_FILE_PATH: yellowpages_bolts.csv
           UPLOAD_FILE_NAME: yellowpages_bolts.csv
         run: python upload_to_gdrive.py
+
+          # below is the code of without scraper_api
+      # - name: 🔩 Run Yellowpage Bolts Scraping Script
+      #   run: python yellowpages_bolts.py
+
+      # - name: ⬆️ Upload Bolts CSV to Google Sheets
+      #   # Pass environment variables specific to the Bolts sheet
+      #   env:
+      #     GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_CREDENTIALS_OFFICIAL }}
+      #     # *** IMPORTANT: REPLACE THIS PLACEHOLDER WITH YOUR SECOND SHEET ID ***
+      #     GDRIVE_SHEET_ID: 1DTTYXlaePfomR6KV5XvbHlwWr0EUSW3CsC4it38GwSw 
+      #     LOCAL_FILE_PATH: yellowpages_bolts.csv
+      #     UPLOAD_FILE_NAME: yellowpages_bolts.csv
+      #   run: python upload_to_gdrive.py
 
       # ======================================================================
       # Optional: Upload Artifacts (Will now include both CSVs)
